@@ -4782,8 +4782,7 @@ Theatre OS · 商業計算器 v0.2 demo
     },
     "overrideTotal": null,
     "paymentSchedule": [
-      { "id": "venuePayment-1", "label": "場租第 1 期", "amount": null, "share": 50, "timing": "contract", "anchor": "演出前", "offsetDays": 90, "note": null },
-      { "id": "venuePayment-2", "label": "場租第 2 期", "amount": null, "share": 50, "timing": "beforeOpening60", "anchor": null, "offsetDays": null, "note": null }
+      { "id": "venuePayment-1", "label": "場租費用", "amount": null, "share": 100, "timing": null, "anchor": "未指定", "offsetDays": null, "note": null }
     ],
     "terms": {
       "template": "rentOnly",
@@ -8881,18 +8880,8 @@ Theatre OS · 商業計算器 v0.2 demo
       return bits.length ? `${bits.join('＋')}＝${localeNum(row.amount)}` : '不適用';
     }
 
-    // legacy 完全沒有付款資料時，50/50 只是計算用的相容假設，絕不寫回 canonical。
-    const RENT_PAYMENT_FALLBACK = [
-      { id: 'compat-venuePayment-1', label: '場租第 1 期', amount: null, share: 50, timing: 'contract', anchor: '未指定', offsetDays: null, note: null },
-      { id: 'compat-venuePayment-2', label: '場租第 2 期', amount: null, share: 50, timing: 'beforeOpening60', anchor: '未指定', offsetDays: null, note: null },
-    ];
-    // T7.5：兩期各自的新制收付時點（anchor／offsetDays）在這裡「讀時計算」，刻意**不**在
-    // normalizeState 寫回 state.rent.paymentSchedule[i]——理由是 engine/xlsx.test.mjs（凍結中，82 測試
-    // 不得變動）有一條全形斷言直接比對「欄位全遺失時 normalizeState 補出來的 state.rent.payment」
-    // 等於 [{share,timing}] 兩鍵的字面量（xlsx.test.mjs:1133），若在那條預設補齊路徑上多寫入
-    // anchor／offsetDays 兩鍵，該斷言會連帶失敗，而本波不得改動那支測試。因此比照 anchorOf()
-    // 的精神，把「舊值缺席時怎麼算出一個誠實的預設」搬到讀取端，只有使用者在畫面上實際編輯
-    // 過的那份 state 才會真的長出這兩個鍵；空白／降級匯入回來的預設值維持原本兩鍵不變。
+    // T7.5：新制收付時點（anchor／offsetDays）只在讀取端補齊顯示值，不由 normalizeState
+    // 寫回 canonical state；只有使用者在預算頁實際編輯後，state 才會長出這兩個鍵。
     // 遷移規則（不腦補基準日換算，理由見 venueCostRowsFor 上方註解）：
     //   有效 anchor（值域內）→ 原樣沿用；否則 timing===followTicket → 隨票款；其餘 → 未指定。
     function rentPaymentAnchorFallback(row) {
@@ -8902,12 +8891,14 @@ Theatre OS · 商業計算器 v0.2 demo
     function rentPaymentPlan(state) {
       const canonical = state.rent && Array.isArray(state.rent.paymentSchedule)
         ? state.rent.paymentSchedule : null;
-      const source = canonical || RENT_PAYMENT_FALLBACK;
+      // 未排付款時點不等於沒有這筆錢：投影成單列全額，時點維持未指定；不寫回付款排程。
+      const source = canonical || [
+        { id: 'venueFixed', label: '場租費用', amount: null, share: 100, timing: null, anchor: '未指定', offsetDays: null, note: null },
+      ];
       return source.map((row, i) => ({
         ...row,
         id: row.id || `venuePayment-${i + 1}`,
-        // H-14（AUDIT_V2 AV2-022）：讀時預設 label 原為 `Payment A/B…`＝英文佔位會直接上金流逐筆
-        // 明細，改為與 RENT_PAYMENT_FALLBACK／示範資料同一字面家族（凍結 mock f7「場租第 N 期」）。
+        // H-14（AUDIT_V2 AV2-022）：舊資料缺 label 時仍以中文期別呈現。
         // ⚠️ 0.9.0 遷移那條（同檔 :11744）的預設 label 由 SPEC/project-file-format.md:1252 明文
         //   釘死為 `Payment A/B/C…`，本票不得動 SPEC，故留在原樣、記為文件債。
         label: row.label || `場租第 ${i + 1} 期`,
@@ -8917,12 +8908,11 @@ Theatre OS · 商業計算器 v0.2 demo
         anchor: rentPaymentAnchorFallback(row),
         offsetDays: row.offsetDays === undefined ? null : row.offsetDays,
         note: row.note === undefined ? null : row.note,
-        compatibilityAssumption: !canonical,
       }));
     }
     function paymentScheduleValidation(state, total) {
       const rows = state.rent && Array.isArray(state.rent.paymentSchedule) ? state.rent.paymentSchedule : null;
-      if (!rows) return [{ code: 'COMPATIBILITY ASSUMPTION' }];
+      if (!rows) return [];
       const issues = [];
       const ids = new Set();
       rows.forEach((row, i) => {
@@ -9053,7 +9043,7 @@ Theatre OS · 商業計算器 v0.2 demo
               amount: scheduleUnpriced || conflict ? null : (hasAmount ? Number(item.amount) : shareAmount),
               category: 'venue', timing: TIMING_VALUES.has(item.timing) ? item.timing : null,
               anchor: item.anchor, offsetDays: item.offsetDays,
-              paymentStatus: conflict ? 'DATA CONFLICT' : (item.compatibilityAssumption ? 'COMPATIBILITY ASSUMPTION' : null),
+              paymentStatus: conflict ? 'DATA CONFLICT' : null,
             });
           });
           fixedTotal = scheduleUnpriced ? null : total;
@@ -14614,29 +14604,9 @@ Theatre OS · 商業計算器 v0.2 demo
 
     // T10 修復（老大 2026-08-09 派工）：舊「data-rate／data-overtime-rate 兩頁鏡射」迴圈已隨
     // 預算頁的舊費率表 UI 一併移除（那組 DOM 節點已不存在，querySelectorAll 只會拿到空集合）。
-    // 本函式只剩「整檔議價總價」與「場租付款分期」兩件與費率無關的唯讀寫回。
+    // 本函式只剩「整檔議價總價」這一件與費率無關的唯讀寫回。
     function renderRates() {
       if ($('rentOverrideTotal')) $('rentOverrideTotal').value = state.rent.overrideTotal ?? '';
-      if (!$('rentPaymentBody')) return;
-      const plan = rentPaymentPlan(state);
-      const terms = venueTermsOf(state);
-      const weekTotal = venueWeekModel(state).result.total;
-      const paymentTotal = terms.fixedBasis === 'amount' ? coreNumber(terms.fixedAmount)
-        : (!isBlankValue(state.rent.overrideTotal) ? coreNumber(state.rent.overrideTotal) : weekTotal);
-      const paymentIssues = paymentScheduleValidation(state, paymentTotal);
-      $('rentPaymentBody').innerHTML = plan.map((item, i) => {
-        const hasAmount = !isBlankValue(item.amount);
-        const hasShare = !isBlankValue(item.share);
-        const status = item.compatibilityAssumption ? '相容假設'
-          : (paymentIssues.some(issue => issue.code === 'DATA CONFLICT' && issue.index === i) ? '資料衝突' : '');
-        return `<tr><th class="left"><input data-rent-payment="${i}" data-field="label" value="${esc(item.label)}" aria-label="付款名稱"></th>`
-          + `<td><input type="number" data-rent-payment="${i}" data-field="share" value="${hasShare ? esc(item.share) : ''}" placeholder="%" aria-label="${esc(item.label)}比例"></td>`
-          + `<td>${bzVenueAnchorControl('payment', i, item, item.label)}</td>`
-          + `<td><input type="number" data-rent-payment="${i}" data-field="amount" value="${hasAmount ? esc(item.amount) : ''}" placeholder="未指定" aria-label="${esc(item.label)}金額"></td>`
-          + `<td>${status ? `<span class="t8-budget-conflict">${status}${status === '資料衝突' && hasAmount && hasShare ? `<br>${esc(money(item.amount))} / ${esc(localeNum(item.share))}%` : ''}</span>` : ''}</td></tr>`;
-      }).join('') + `<tr><th class="left">逐場場租條款</th><td><span class="is-na">不適用</span></td>`
-        + `<td>${bzVenueAnchorControl('term', 0, terms, '逐場場租條款')}</td>`
-        + `<td><span class="is-na">不適用</span></td><td></td></tr>`;
     }
 
     // R2 M5：四個用途各以單一欄投影既有三時段矩陣。舊資料若三格不同，只顯示「進階值」；
@@ -19127,41 +19097,6 @@ Theatre OS · 商業計算器 v0.2 demo
       for (const use of ['setup', 'rehearsal', 'teardown']) state.rent.rateOT[use] = v;
       recalc();
     });
-    const rentPaymentBodyEl = $('rentPaymentBody');
-    if (rentPaymentBodyEl) {
-    rentPaymentBodyEl.addEventListener('change', e => {
-      if (e.target.dataset && e.target.dataset.venueKind !== undefined) {
-        onVenueAnchorEdit(e);
-        return;
-      }
-      const idx = Number(e.target.dataset.rentPayment);
-      if (!Number.isInteger(idx)) return;
-      if (!Array.isArray(state.rent.paymentSchedule)) return;
-      const field = e.target.dataset.field;
-      state.rent.paymentSchedule[idx][field] = ['amount', 'share'].includes(field)
-        ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value;
-      recalc();
-    });
-    rentPaymentBodyEl.addEventListener('input', onVenueAnchorEdit);
-    rentPaymentBodyEl.addEventListener('click', e => {
-      const idx = Number(e.target.dataset.deleteRentPayment);
-      if (!Number.isInteger(idx) || !Array.isArray(state.rent.paymentSchedule)) return;
-      state.rent.paymentSchedule.splice(idx, 1);
-      recalc();
-    });
-    $('addRentPaymentBtn').addEventListener('click', () => {
-      if (!Array.isArray(state.rent.paymentSchedule)) state.rent.paymentSchedule = [];
-      const i = state.rent.paymentSchedule.length;
-      // H-14（AUDIT_V2 AV2-022）：新列預設 label 同步改中文字面家族。
-      state.rent.paymentSchedule.push({ id: `venuePayment-${Date.now()}`, label: `場租第 ${i + 1} 期`, amount: null, share: null, timing: null, anchor: '未指定', offsetDays: null, note: null });
-      recalc();
-    });
-    $('acceptRentCompatibilityBtn').addEventListener('click', () => {
-      state.rent.paymentSchedule = RENT_PAYMENT_FALLBACK.map((row, i) => ({ ...row, id: `venuePayment-${i + 1}` }));
-      recalc();
-    });
-    }
-
     // ── 場館條款（ADR-0010 兩軸）：範本按鈕只填結構欄位，金額仍由使用者輸入 ──
     function venueTerms() {
       if (!state.rent.terms || typeof state.rent.terms !== 'object') {
