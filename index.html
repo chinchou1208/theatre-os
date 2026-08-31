@@ -8148,6 +8148,12 @@ Theatre OS · 商業計算器 v0.2 demo
           rowPattern: /^第(\d+)排$/, extraRowPatterns: [/^彈性排？$/], hostColumns: ['B'], scan: [4, 26], skipColumns: [16], excludeWhite: false,
           floors: [{ name: '觀眾席', from: 10, to: 19 }], rowDeclaredColumn: null, totalDeclaredCell: null,
         }),
+        shuiyuan: Object.freeze({
+          venue: '台北水源劇場', sheet: '原始票圖', rowPattern: /^(?:[1-9]|10)$/,
+          numericRowLabels: true, hostColumns: ['M', 'Z'], scan: [2, 37], skipColumns: [13, 26], excludeWhite: false,
+          excludedFillHexes: ['999999', 'FF00FF', '46BDC6', '34A853', 'FF0000'],
+          floors: [{ name: '觀眾席', from: 15, to: 24 }], rowDeclaredColumn: null, totalDeclaredCell: null,
+        }),
       });
 
       function parseMergeCells(xml = '') {
@@ -8188,8 +8194,9 @@ Theatre OS · 商業計算器 v0.2 demo
       function 找排標(sheet, row, config) {
         for (const column of config.hostColumns) {
           const value = sheet.cells.get(`${column}${row}`)?.value;
-          if (typeof value !== 'string') continue;
-          if (config.rowPattern.test(value) || (config.extraRowPatterns || []).some(pattern => pattern.test(value))) return value;
+          const label = config.numericRowLabels && 數值(value) ? String(value) : value;
+          if (typeof label !== 'string') continue;
+          if (config.rowPattern.test(label) || (config.extraRowPatterns || []).some(pattern => pattern.test(label))) return label;
         }
         return null;
       }
@@ -8243,7 +8250,7 @@ Theatre OS · 商業計算器 v0.2 demo
             if (!找排標(sheet, targetRow, config)) continue;
             const cell = sheet.cells.get(ref);
             const fillHex = 正規色(fillHexOf(book.styles, cell?.styleIndex));
-            if (!cell || !數值(cell.value) || !fillHex || config.excludedCells?.includes(ref) || (config.excludeWhite && fillHex === 'FFFFFF')) continue;
+            if (!cell || !數值(cell.value) || !fillHex || config.excludedCells?.includes(ref) || config.excludedFillHexes?.includes(fillHex) || (config.excludeWhite && fillHex === 'FFFFFF')) continue;
             colors.add(fillHex);
           }
         }
@@ -8255,7 +8262,8 @@ Theatre OS · 商業計算器 v0.2 demo
         let rowLabels = 0;
         for (const [ref, cell] of sheet.cells) {
           if (!config.hostColumns.some(column => ref.startsWith(column))) continue;
-          if (typeof cell?.value === 'string' && (config.rowPattern.test(cell.value) || (config.extraRowPatterns || []).some(pattern => pattern.test(cell.value)))) rowLabels += 1;
+          const label = config.numericRowLabels && 數值(cell?.value) ? String(cell.value) : cell?.value;
+          if (typeof label === 'string' && (config.rowPattern.test(label) || (config.extraRowPatterns || []).some(pattern => pattern.test(label)))) rowLabels += 1;
         }
         const declared = config.totalDeclaredCell && 數值(sheet.cells.get(config.totalDeclaredCell)?.value) ? 1 : 0;
         const legend = config.legend && sheet.cells.get(`${config.legend.fill}${config.legend.from}`) ? 1 : 0;
@@ -8319,6 +8327,7 @@ Theatre OS · 商業計算器 v0.2 demo
             const fillHex = 正規色(fillHexOf(book.styles, cell?.styleIndex));
             if (!cell || !數值(cell.value) || !fillHex) continue;
             if (config.excludedCells?.includes(ref)) { decorativeCells += 1; continue; }
+            if (config.excludedFillHexes?.includes(fillHex)) { decorativeCells += 1; continue; }
             if (config.excludeWhite && fillHex === 'FFFFFF') { decorativeCells += 1; continue; }
             const merged = merges.find(item => row >= item.start.row && row <= item.end.row && col >= item.start.col && col <= item.end.col) || null;
             const seats = seatsByTarget.get(targetRow) || [];
