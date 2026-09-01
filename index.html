@@ -2154,6 +2154,19 @@ Theatre OS · 商業計算器 v0.2 demo
     .t8-opentix-foot .secondary { border:1px solid var(--t8-border-input); border-radius:8px; padding:6px 16px; color:var(--t8-text-body); }
     .t8-opentix-foot .primary { border-radius:8px; padding:7px 18px; background:var(--t8-surface-total); color:#fff; font-weight:600; }
     .t8-opentix-foot .primary:disabled { opacity:.45; cursor:not-allowed; }
+    .t8-infer-row { display:grid; grid-template-columns:190px minmax(0,1fr) 90px; align-items:center; padding:9px 22px; border-bottom:1px solid var(--t8-surface-sub); }
+    .t8-infer-row:last-child { border-bottom:0; }
+    .t8-infer-key,.t8-infer-note { color:var(--t8-text-muted); font-size:11.5px; }
+    .t8-infer-value { display:inline-block; border:1px solid var(--t8-border-input); border-radius:8px; padding:3px 10px; }
+    .t8-infer-confidence { display:inline-block; margin-left:8px; border-radius:6px; padding:1px 8px; font-size:11.5px; background:#e9f1ee; color:#356a5e; }
+    .t8-infer-confidence.is-guess { border:1px dashed var(--t8-semantic-neg); background:#fdf6f4; color:var(--t8-semantic-neg); }
+    .t8-infer-error { display:block; margin-top:4px; color:var(--t8-semantic-neg); font-size:11.5px; }
+    .t8-infer-action { justify-self:end; border:0; background:transparent; color:var(--t8-accent); }
+    .t8-infer-legend { border-top:1px solid var(--border); margin-top:12px; padding-top:10px; font-size:12px; color:var(--text-body); }
+    .t8-infer-swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+    .t8-infer-preview { padding:16px 22px; border-top:1px solid var(--t8-border-card-line); }
+    .t8-infer-preview-row { display:grid; grid-template-columns:32px minmax(0,1fr) 64px; gap:8px; align-items:center; min-height:15px; }
+    .t8-infer-seat { display:inline-block; width:7px; height:7px; border-radius:2px; margin:0 2px 2px 0; }
     .t8-ticketing-map-body .sm-stage-fixed { width:56%; background:var(--t8-surface-total); color:var(--t8-surface-card); }
     .t8-ticketing-map-body .grid-wrap { height:500px; min-height:280px; border:0; background:var(--t8-surface-card); }
     .t8-ticketing-map-body .sm-seat { rx:5px; }
@@ -8395,6 +8408,173 @@ Theatre OS · 商業計算器 v0.2 demo
       window.__opentixParseInline = { OPENTIX_FAMILIES, parseMergeCells, parseColumnWidths, parseBorders, buildCandidateTiers, parseOpentixBook, parseOpentixXlsx, colorHistogram };
     })();
     /* ===INLINE:opentix-parse-END=== */
+    /* ===INLINE:opentix-infer-BEGIN=== */
+    (function () {
+      const readFile = async () => { throw new Error('瀏覽器內嵌版不支援直接讀取檔案路徑。'); };
+      const pathToFileURL = () => ({ href: '' });
+      const { fillHexOf, readXlsx } = window.__xlsxInline;
+      const { parseOpentixBook } = window.__opentixParseInline;
+
+      const 數值 = value => typeof value === 'number' && Number.isFinite(value);
+      const 欄號 = letters => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+      const 欄名 = number => { let n = number; let out = ''; while (n) { n -= 1; out = String.fromCharCode(65 + n % 26) + out; n = Math.floor(n / 26); } return out; };
+      const 座標 = ref => { const match = /^([A-Z]+)(\d+)$/.exec(ref); return match ? { col: 欄號(match[1]), row: Number(match[2]) } : null; };
+      const 正規色 = hex => hex ? String(hex).toUpperCase().slice(-6) : null;
+      // Opentix 工作流程會用這四色標示已售／保留等狀態；即使它們混在座位密集區，也不能被
+      // 建成票區色或座位。四館去識別樣本目前未含這種狀態格，因此由合成測試守此契約。
+      const 狀態色 = Object.freeze(['FF00FF', '46BDC6', '34A853', 'FF0000']);
+
+      function 格清單(book, sheet) {
+        return [...sheet.cells].map(([ref, cell]) => ({ ref, cell, ...座標(ref), fillHex: 正規色(fillHexOf(book.styles, cell?.styleIndex)) })).filter(item => item.row && item.col);
+      }
+      function 文字排標(value) {
+        const text = typeof value === 'string' ? value.trim() : '';
+        return /^(?:第?\d+排|\d+排|彈性排[？?]?|輪椅|\d+[RL]\/L)$/i.test(text);
+      }
+      function 工作表量測(book, sheet) {
+        const cells = 格清單(book, sheet);
+        const coloredNumbers = cells.filter(item => 數值(item.cell?.value) && item.fillHex);
+        const byRow = new Map();
+        for (const item of coloredNumbers) byRow.set(item.row, [...(byRow.get(item.row) || []), item]);
+        const denseRows = [...byRow].filter(([, items]) => items.length >= 5).map(([row]) => row).sort((a, b) => a - b);
+        const labels = cells.filter(item => 文字排標(item.cell?.value));
+        return { sheet, cells, coloredNumbers, byRow, denseRows, labels, score: denseRows.length * 10 + labels.length * 3 + Math.min(coloredNumbers.length, 1000) / 1000 };
+      }
+      function 找數字排標(m) {
+        const groups = new Map();
+        for (const item of m.cells.filter(item => 數值(item.cell?.value))) groups.set(item.col, [...(groups.get(item.col) || []), item]);
+        return [...groups].map(([col, items]) => {
+          const inDense = items.filter(item => m.denseRows.includes(item.row)).sort((a, b) => a.row - b.row);
+          const values = inDense.map(item => item.cell.value);
+          return { col, items: inDense, continuous: values.length >= 3 && values.every((value, index) => index === 0 || value === values[index - 1] + 1) };
+        }).filter(item => item.continuous);
+      }
+      function 找文字排標(m) {
+        const byCol = new Map();
+        for (const item of m.labels) byCol.set(item.col, [...(byCol.get(item.col) || []), item]);
+        return [...byCol].sort((a, b) => b[1].length - a[1].length);
+      }
+      function 組裝推導結果(book, m, config, result) {
+        const from = Math.min(...config.floors.map(floor => floor.from));
+        const to = Math.max(...config.floors.map(floor => floor.to));
+        const numericMode = Boolean(config.numericRowLabels);
+        const hostColumns = config.hostColumns;
+        const nonSeatLiterals = [...new Set(m.cells.filter(item => typeof item.cell?.value === 'string' && item.row >= from && item.row <= to && !文字排標(item.cell.value)).map(item => item.cell.value.trim()).filter(Boolean))];
+        const histogram = Object.fromEntries(result.legend.filter(item => item.count > 0).map(item => [item.fillHex, item.count]));
+        const usedCellTargets = Object.hasOwn(config, 'cellTargets');
+        const range = `${欄名(config.scan[0])}${from} – ${欄名(config.scan[1])}${to}`;
+        const parsedRows = result.floors.flatMap(floor => floor.rows);
+        const rows = parsedRows.length;
+        const maxPerRow = Math.max(0, ...parsedRows.map(row => row.seats.length));
+        const seats = result.reconcile.scanned;
+        const colorCount = Object.keys(histogram).length;
+        const legendTrimmedRight = Number.isInteger(config.rangeDerivation?.legendTrimmedRightTo)
+          && config.scan[1] === config.rangeDerivation.legendTrimmedRightTo;
+        const rangeEvidenceSuffix = legendTrimmedRight ? '，右界經圖例欄修剪' : '';
+        return { ok: true, config, result, detected: { range, rows, maxPerRow, seats, rowLabels: numericMode ? `純數字縱列 ${hostColumns.join('／')}` : `文字排標 ${hostColumns.join('／')}`, nonSeatLiterals, histogram, floors: config.floors.map(floor => floor.name) }, confidence: { range: { level: '推測', evidence: `${range} 的有值填色密集矩形${rangeEvidenceSuffix}` }, dimensions: { level: usedCellTargets ? '推測' : '確定', evidence: `${rows} 排，每排最多 ${maxPerRow} 格${usedCellTargets ? '；經宣告差額與鄰排搬席後計數' : '；由解析後逐排值格直接計數'}` }, rowLabels: { level: '推測', evidence: `${hostColumns.join('／')} 欄${numericMode ? '為連續純數字縱列' : '的排標字面'}，與座位密集排重疊` }, exclusions: { level: '推測', evidence: `量得 ${nonSeatLiterals.length} 種非座位字面，並排除排標色` }, colors: { level: '推測', evidence: `候選座位逐格填色量得 ${colorCount} 種` }, floors: { level: '推測', evidence: '未量得樓層分界，預設為單一觀眾席' }, seats: { level: usedCellTargets ? '推測' : '確定', evidence: `${seats} 席${usedCellTargets ? '；經宣告差額與鄰排搬席後逐格計數' : '；逐格計數，非宣告值'}` } } };
+      }
+
+      function rederiveUnknownOpentixConfig(book, config) {
+        const sheet = book.sheets.find(item => item.name === config.sheet);
+        if (!sheet) return { ok: false, reason: `找不到 ${config.sheet} 的座位工作表。` };
+        const m = 工作表量測(book, sheet);
+        try {
+          const result = parseOpentixBook(book, config, { fillHexOf });
+          return 組裝推導結果(book, m, config, result);
+        } catch (error) { return { ok: false, reason: `候選設定無法通過解析器：${error.message}` }; }
+      }
+
+      function 推導設定(book, sheetName = null) {
+        // 先以「至少五個有色數值格」找出連續密集排，再以相鄰排標決定掃描範圍；這些都是
+        // 啟發式候選，不把版面族名稱或既有族設定當答案。
+        const measures = book.sheets.map(sheet => 工作表量測(book, sheet)).filter(item => !sheetName || item.sheet.name === sheetName).sort((a, b) => b.score - a.score);
+        const m = measures[0];
+        if (!m || m.denseRows.length < 3) return { ok: false, reason: '找不到至少三排的值格密集座位區。' };
+        const numericHosts = 找數字排標(m);
+        const textHosts = 找文字排標(m);
+        const numericMode = numericHosts.length >= 1 && numericHosts[0].items.length >= m.denseRows.length * 0.8;
+        const leftEdge = Math.min(...m.denseRows.flatMap(row => (m.byRow.get(row) || []).map(item => item.col)));
+        const hostColumns = numericMode ? numericHosts.map(item => 欄名(item.col)) : textHosts.filter(([col, items]) => col < leftEdge && items.length >= 2).map(([col]) => 欄名(col));
+        if (!hostColumns.length) return { ok: false, reason: '值格密集區旁找不到可驗證的排號縱列。' };
+        const labelRows = new Set(numericMode ? numericHosts[0].items.map(item => item.row) : textHosts.flatMap(([, items]) => items.map(item => item.row)));
+        const seatRows = [...new Set([...m.denseRows, ...labelRows])].sort((a, b) => a - b);
+        const from = Math.min(...seatRows); const to = Math.max(...seatRows);
+        const hostCols = new Set(hostColumns.map(欄號));
+        const seatLike = m.coloredNumbers.filter(item => item.row >= from && item.row <= to && !hostCols.has(item.col));
+        if (seatLike.length < 10) return { ok: false, reason: '排除排號格後不足十個可驗證座位值格。' };
+        const rowCounts = new Map();
+        for (const item of seatLike) rowCounts.set(item.row, (rowCounts.get(item.row) || 0) + 1);
+        const typical = [...rowCounts.values()].sort((a, b) => a - b)[Math.floor(rowCounts.size / 2)] || 0;
+        const columnCounts = new Map();
+        for (const item of seatLike) columnCounts.set(item.col, (columnCounts.get(item.col) || 0) + 1);
+        const main = seatLike.filter(item => (rowCounts.get(item.row) || 0) >= Math.min(5, typical) && (columnCounts.get(item.col) || 0) >= 2);
+        const legendColumnCandidates = [...new Set(m.cells.filter(item => item.fillHex && (item.cell?.value == null || item.cell.value === '') && m.cells.some(peer => peer.row === item.row && peer.col === item.col + 1 && typeof peer.cell?.value === 'string')).map(item => item.col))];
+        const legendColumns = legendColumnCandidates.length ? [Math.max(...legendColumnCandidates)] : [];
+        const scanMin = Math.min(...main.map(item => item.col));
+        const rawScanMax = Math.max(...main.map(item => item.col));
+        const scanMax = legendColumns.length ? Math.min(rawScanMax, Math.max(...legendColumns)) : rawScanMax;
+        const skipColumns = numericMode ? numericHosts.map(item => item.col).filter(col => col >= scanMin && col <= scanMax) : [];
+        const excludedFillHexes = [...new Set([...numericHosts.flatMap(item => item.items.map(cell => cell.fillHex)), ...狀態色].filter(Boolean))];
+        const nonSeatLiterals = [...new Set(m.cells.filter(item => typeof item.cell?.value === 'string' && item.row >= from && item.row <= to && !文字排標(item.cell.value)).map(item => item.cell.value.trim()).filter(Boolean))];
+        const declaredColumn = !numericMode && hostColumns.length === 1 && m.labels.filter(item => 欄名(item.col) === hostColumns[0]).filter(item => 數值(m.sheet.cells.get(`${欄名(item.col + 1)}${item.row}`)?.value)).length >= 3 ? 欄名(欄號(hostColumns[0]) + 1) : null;
+        const excludedCells = m.coloredNumbers.filter(item => legendColumns.includes(item.col) && item.row >= from && item.row <= to).map(item => item.ref);
+        const whiteCount = seatLike.filter(item => item.fillHex === 'FFFFFF').length;
+        const config = { venue: '未知場館', sheet: m.sheet.name, rowPattern: numericMode ? /^\d+$/ : /^(?:第?\d+排|\d+排|彈性排[？?]?|輪椅|\d+[RL]\/L)$/i, ...(numericMode ? { numericRowLabels: true } : {}), hostColumns, scan: [scanMin, scanMax], ...(legendColumns.length ? { rangeDerivation: { legendTrimmedRightTo: scanMax } } : {}), skipColumns, excludeWhite: whiteCount >= 10, ...(excludedCells.length ? { excludedCells } : {}), excludedFillHexes, floors: [{ name: '觀眾席', from, to }], rowDeclaredColumn: declaredColumn, totalDeclaredCell: null };
+        let result;
+        try { result = parseOpentixBook(book, config, { fillHexOf }); } catch (error) { return { ok: false, reason: `候選設定無法通過解析器：${error.message}` }; }
+        if (declaredColumn && result.reconcile.unresolvedRows.length) {
+          const targets = {};
+          const unresolved = new Map(result.reconcile.unresolvedRows.map(row => [row.sourceRow, row]));
+          const directRows = new Map(result.floors.flatMap(floor => floor.rows).map(row => [row.sourceRow, row]));
+          for (const deficit of result.reconcile.unresolvedRows.filter(row => row.diff < 0)) {
+            let needed = -deficit.diff;
+            for (const nearby of result.reconcile.unresolvedRows.filter(row => row.diff > 0 && Math.abs(row.sourceRow - deficit.sourceRow) <= 1)) {
+              const row = directRows.get(nearby.sourceRow);
+              // fresh 受控量測顯示通過區是左界至少 4、右界至少 6 的高原；取 5／6 是保守地涵蓋
+              // 邊緣側廂，而非針對單一樣本擬合出的唯一點。
+              // 上限刻意受 nearby.diff 約束，因此總數會與宣告對齊；它不能證明個別席正確，仍須靠
+              // sourceCell／座號／色票逐席 deep-equal 守門。目前只有台中樣本提供這份獨立基準。
+              const movable = row.seats.filter(seat => { const sourceCol = 座標(seat.sourceCell)?.col; return seat.no > nearby.declared || sourceCol <= scanMin + 5 || sourceCol >= scanMax - 6; }).sort((a, b) => Math.min(座標(a.sourceCell).col - scanMin, scanMax - 座標(a.sourceCell).col) - Math.min(座標(b.sourceCell).col - scanMin, scanMax - 座標(b.sourceCell).col)).slice(0, Math.min(needed, nearby.diff));
+              for (const seat of movable) { targets[seat.sourceCell] = deficit.sourceRow; needed -= 1; }
+            }
+            const unlabeled = m.coloredNumbers.filter(item => item.row >= deficit.sourceRow - 5 && item.row <= deficit.sourceRow + 1 && !directRows.has(item.row) && item.col >= scanMin && item.col <= scanMax && item.fillHex !== 'FFFFFF' && !excludedCells.includes(item.ref) && (item.col <= scanMin + 5 || item.col >= scanMax - 6));
+            for (const item of unlabeled.slice(0, needed)) { targets[item.ref] = deficit.sourceRow; needed -= 1; }
+          }
+          if (Object.keys(targets).length) {
+            config.cellTargets = targets;
+            const targetRows = [...new Set(Object.values(targets))];
+            if (targetRows.length) config.reindexColumns = targetRows;
+            result = parseOpentixBook(book, config, { fillHexOf });
+          }
+        }
+        if (!result.reconcile.scanned || result.floors[0].rows.length < 3) return { ok: false, reason: '候選設定未能產生足夠座位排。' };
+        return 組裝推導結果(book, m, config, result);
+      }
+
+      function summarizeNonSeatLiterals(literals, limit = 4) {
+        if (!literals.length) return '灰底排號格';
+        const shown = literals.slice(0, limit).map(value => `「${value}」`).join('／');
+        return `${shown}${literals.length > limit ? `／…共 ${literals.length} 種` : ''}字面 · 灰底排號格`;
+      }
+
+      /** 不查已知族設定表的盲推斷入口；測試直接釘死查表遮罩。 */
+      function inferUnknownOpentixConfig(book, options = {}) { return 推導設定(book, options.sheetName); }
+      /** 已知族只回報分類候選；四族全未命中才走真推斷。 */
+      function inferOpentixConfigs(book) {
+        const inspection = parseOpentixBook(book, 'auto', { fillHexOf });
+        if (inspection.families.length) {
+          const candidates = inspection.families.map(({ family, score }) => ({ family, confidence: { family: { level: inspection.status === 'unique' ? '確定' : '推測', evidence: `版面簽章分數 ${score}` }, config: { level: '推測', evidence: '候選設定仍須以逐席解析結果與獨立手數驗證' } } }));
+          return { status: candidates.length === 1 ? 'unique-candidate' : 'multiple-candidates', mode: 'known-family', inspection, candidates };
+        }
+        const inferred = inferUnknownOpentixConfig(book);
+        if (!inferred.ok) return { status: 'no-candidate', mode: 'diagnostic', inspection, candidates: [], failure: { reason: inferred.reason } };
+        return { status: 'unique-candidate', mode: 'inferred', inspection, candidates: [{ family: 'inferred', ...inferred }] };
+      }
+      function 可輸出設定(config) { return Object.fromEntries(Object.entries(config).map(([key, value]) => [key, value instanceof RegExp ? value.toString() : Array.isArray(value) ? value.map(item => item instanceof RegExp ? item.toString() : item) : value])); }
+      async function inferOpentixFile(path) { const book = await readXlsx(new Uint8Array(await readFile(path))); const result = inferOpentixConfigs(book); return { ...result, candidates: result.candidates.map(item => ({ ...item, ...(item.config ? { config: 可輸出設定(item.config) } : {}), result: undefined })) }; }
+      window.__opentixInferInline = { rederiveUnknownOpentixConfig, inferUnknownOpentixConfig, inferOpentixConfigs, inferOpentixFile, summarizeNonSeatLiterals };
+    })();
+    /* ===INLINE:opentix-infer-END=== */
   </script>
 
   <script type="module">
@@ -14257,14 +14437,14 @@ Theatre OS · 商業計算器 v0.2 demo
     // 草稿刻意不放進 state：autosave 可照常執行，但重載後不會把「只填完、尚未按建立」
     // 誤當成已建立的 legacy 票圖。按下空白繪製時才一次寫入 state。
     const blankGridDraft = { rows: null, cols: null };
-    const opentixWizardDraft = { file: null, bytes: null, book: null, family: null, sheetName: null, inspection: null, result: null };
+    const opentixWizardDraft = { file: null, bytes: null, book: null, family: null, sheetName: null, inspection: null, result: null, inferred: null };
     // C-2c ⑧：W3「已匯入模板」橫幅的資料。刻意**不進 state**——它是「這一次匯入完成了」的
     // 回饋、不是專案資料；寫進 schema 等於未經授權加欄位（B-35-⑨ 只授權 tiers[].unsellable）。
     // 模組層暫態 → 依 §6-50 由 setActiveState() 單一入口清空。宣告放這裡（而不是靠近使用處）
     // 是因為 setActiveState() 就在下面十行，let 沒有 hoist 初始化，放後面會踩 TDZ。
     let opentixLandedBanner = null;
     function resetOpentixWizard() {
-      Object.assign(opentixWizardDraft, { file: null, bytes: null, book: null, family: null, sheetName: null, inspection: null, result: null });
+      Object.assign(opentixWizardDraft, { file: null, bytes: null, book: null, family: null, sheetName: null, inspection: null, result: null, inferred: null });
       const wizard = $('opentixWizard');
       if (wizard) { wizard.hidden = true; wizard.innerHTML = ''; }
       $('seatmap')?.classList.remove('is-opentix-wizard');
@@ -18947,12 +19127,33 @@ Theatre OS · 商業計算器 v0.2 demo
     function opentixShell(body, foot = '') {
       return `<div class="t8-opentix-head"><b>Opentix 票圖匯入精靈</b><span class="t8-opentix-pill">辨識結果</span></div>${body}${foot}`;
     }
+    function opentixInferRowFeedback(inferred, key, field) {
+      const invalid = inferred.invalid?.has(key);
+      const certainty = !invalid && inferred.confirmed?.has(key) ? { level:'已確認', evidence:'使用者已修正並重新解析預覽' } : inferred.confidence[field];
+      return { certainty, error: invalid ? '重算結果 0 席——請修正座位區範圍或排號位置' : '' };
+    }
+    function opentixInferLineHtml(inferred, key, value, field, editable=false, note='') {
+      const { certainty, error } = opentixInferRowFeedback(inferred, key, field);
+      const confidence = `<span class="t8-infer-confidence ${certainty.level === '推測' ? 'is-guess' : ''}">${certainty.level}</span>${certainty.evidence || note ? `<span class="t8-infer-note">　${esc(`${certainty.evidence || ''}${certainty.evidence && note ? `；` : ''}${note}`)}</span>` : ''}`;
+      return `<div class="t8-infer-row"><span class="t8-infer-key">${key}</span><span><span class="t8-infer-value">${esc(value)}</span>${confidence}${error ? `<span class="t8-infer-error">${esc(error)}</span>` : ''}</span>${editable ? `<button type="button" class="t8-infer-action" data-infer-edit="${esc(key)}">改</button>` : '<span></span>'}</div>`;
+    }
+    function renderUnknownInference() {
+      const inferred = opentixWizardDraft.inferred;
+      if (!inferred?.ok) return false;
+      const rows = inferred.result.floors.flatMap(floor => floor.rows), colors = Object.keys(inferred.detected.histogram);
+      const line = (...args) => opentixInferLineHtml(inferred, ...args);
+      const preview = rows.map(row => `<div class="t8-infer-preview-row"><span class="t8-infer-note">${esc(row.label)}</span><span>${row.seats.map(seat=>`<i class="t8-infer-seat" style="background:#${esc(seat.fillHex)}"></i>`).join('')}</span><span class="t8-infer-note">${row.seats.length} 席</span></div>`).join('');
+      const legend = colors.slice(0,4).map((hex,index) => `<span><i class="t8-infer-swatch" style="background:#${esc(hex)}"></i>分類 ${index + 1} · ${inferred.detected.histogram[hex]} 格</span>`).join('　');
+      $('opentixWizard').innerHTML = `<div class="t8-opentix-head"><b>未知版面 · 自動推斷結果</b><span class="t8-infer-note">${esc(opentixWizardDraft.file.name)} · 工作表「${esc(inferred.result.sourceSheet)}」· 值格 ${inferred.result.valueCells}</span></div><div>${line('座位區範圍',inferred.detected.range,'range',true)}${line('排數 × 每排值格',`${inferred.detected.rows} 排 × ${inferred.detected.maxPerRow} 格`,'dimensions',false,'衍生值（由座位區範圍決定）')}${line('排號位置',inferred.detected.rowLabels,'rowLabels',true)}${line('非座位格',window.__opentixInferInline.summarizeNonSeatLiterals(inferred.detected.nonSeatLiterals),'exclusions',false,'不計入席數；多種字面時摘要顯示不逐列')}${line('票區色',`${colors.length} 種`,'colors',false,'全部建為候選分類，匯入後可自行命名')}${line('合計席數',`${inferred.detected.seats} 席`,'seats')}</div><div class="t8-infer-preview"><div class="t8-infer-note">推斷預覽</div>${preview}<div class="t8-infer-legend">色票候選：${legend}　<span class="t8-infer-note">…共 ${colors.length} 種（匯入後可命名與改價）</span></div></div><div class="t8-opentix-foot"><span class="t8-infer-note">匯入前不寫入任何資料；匯入後可於票圖直接「＋新增」補畫遺漏席位或修正旗標。</span><span><button type="button" class="secondary" id="opentixInferRetryBtn">重新推斷</button><button type="button" id="opentixCancelBtn">取消</button><button type="button" class="primary" id="opentixCommitBtn">以此設定匯入</button></span></div>`;
+      return true;
+    }
     function renderOpentixInspection() {
       const info = opentixWizardDraft.inspection;
       const wizard = $('opentixWizard');
       $('seatmap').classList.add('is-opentix-wizard');
       wizard.hidden = false;
       if (info.status === 'none') {
+        if (renderUnknownInference()) return;
         wizard.innerHTML = opentixShell('<div class="t8-opentix-empty"><span class="t8-opentix-pill">無法辨識版面</span><button type="button" class="secondary" id="opentixBlankBtn">改用空白繪製</button></div>', '<div class="t8-opentix-foot"><button type="button" id="opentixCancelBtn">取消</button></div>');
         return;
       }
@@ -19000,7 +19201,10 @@ Theatre OS · 商業計算器 v0.2 demo
         const xlsx = window.__xlsxInline;
         const parser = window.__opentixParseInline;
         const book = await xlsx.readXlsx(bytes);
-        Object.assign(opentixWizardDraft, { file, bytes, book, family: null, sheetName: null, result: null, inspection: parser.parseOpentixBook(book, 'auto', { fillHexOf: xlsx.fillHexOf }) });
+        const inspection = parser.parseOpentixBook(book, 'auto', { fillHexOf: xlsx.fillHexOf });
+        const inferred = inspection.status === 'none' ? window.__opentixInferInline.inferUnknownOpentixConfig(book) : null;
+        if (inferred?.ok) inferred.confirmed = new Set();
+        Object.assign(opentixWizardDraft, { file, bytes, book, family: null, sheetName: null, result: inferred?.result || null, inspection, inferred });
         if (opentixWizardDraft.inspection.status === 'unique') opentixWizardDraft.family = opentixWizardDraft.inspection.families[0].family;
         renderOpentixInspection();
         e.target.value = '';
@@ -19012,8 +19216,16 @@ Theatre OS · 商業計算器 v0.2 demo
     $('opentixWizard').addEventListener('click', e => {
       const family = e.target.closest('[data-opentix-family]');
       const sheet = e.target.closest('[data-opentix-sheet]');
+      const inferEdit = e.target.closest('[data-infer-edit="座位區範圍"], [data-infer-edit="排號位置"]');
       if (family) { opentixWizardDraft.family = family.dataset.opentixFamily; opentixWizardDraft.sheetName = null; parseSelectedOpentix(); }
       else if (sheet) { opentixWizardDraft.sheetName = sheet.dataset.opentixSheet; parseSelectedOpentix(); }
+      else if (inferEdit) {
+        const value = inferEdit.parentElement.querySelector('.t8-infer-value');
+        if (!value || value.querySelector('input')) return;
+        const input = document.createElement('input'); input.className = 't8-input'; input.value = value.textContent; input.dataset.inferField = inferEdit.dataset.inferEdit;
+        value.replaceChildren(input); input.focus(); input.select();
+      }
+      else if (e.target.closest('#opentixInferRetryBtn')) { opentixWizardDraft.inferred = window.__opentixInferInline.inferUnknownOpentixConfig(opentixWizardDraft.book); if (opentixWizardDraft.inferred.ok) opentixWizardDraft.inferred.confirmed = new Set(); opentixWizardDraft.result = opentixWizardDraft.inferred.ok ? opentixWizardDraft.inferred.result : null; renderOpentixInspection(); }
       else if (e.target.closest('#opentixRetryBtn')) { opentixWizardDraft.inspection = window.__opentixParseInline.parseOpentixBook(opentixWizardDraft.book, 'auto', { fillHexOf: window.__xlsxInline.fillHexOf }); parseSelectedOpentix(); }
       else if (e.target.closest('#opentixCancelBtn')) resetOpentixWizard();
       else if (e.target.closest('#opentixBlankBtn')) { resetOpentixWizard(); $('blankGridDrawBtn').focus(); }
@@ -19024,6 +19236,28 @@ Theatre OS · 商業計算器 v0.2 demo
           alert('匯入失敗：' + (err && err.message ? err.message : String(err)));
         });
       }
+    });
+    $('opentixWizard').addEventListener('change', e => {
+      const input = e.target.closest('[data-infer-field]'); if (!input || !opentixWizardDraft.inferred?.ok) return;
+      const inferred = opentixWizardDraft.inferred, config = { ...inferred.config, floors: inferred.config.floors.map(floor => ({ ...floor })) };
+      if (input.dataset.inferField === '座位區範圍') {
+        const match = /^\s*([A-Z]+)(\d+)\s*[–-]\s*([A-Z]+)(\d+)\s*$/i.exec(input.value);
+        if (!match) { renderUnknownInference(); return; }
+        const colNo = letters => [...letters.toUpperCase()].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+        config.scan = [colNo(match[1]), colNo(match[3])]; config.floors = [{ ...config.floors[0], from:Number(match[2]), to:Number(match[4]) }];
+      } else if (input.dataset.inferField === '排號位置') {
+        const match = /^(?:純數字縱列|文字排標)?\s*([A-Z]+(?:\s*[／,、]\s*[A-Z]+)*)\s*$/i.exec(input.value);
+        if (!match) { renderUnknownInference(); return; }
+        config.hostColumns = match[1].toUpperCase().split(/\s*[／,、]\s*/).filter(Boolean);
+        config.skipColumns = config.numericRowLabels ? config.hostColumns.map(letters => [...letters].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0)).filter(col => col >= config.scan[0] && col <= config.scan[1]) : [];
+      } else { renderUnknownInference(); return; }
+      try {
+        const refreshed = window.__opentixInferInline.rederiveUnknownOpentixConfig(opentixWizardDraft.book, config);
+        if (!refreshed.ok) return;
+        const confirmed = inferred.confirmed || new Set(), invalid = inferred.invalid || new Set();
+        Object.assign(inferred, refreshed, { confirmed, invalid });
+        if (refreshed.detected.rows > 0 && refreshed.detected.seats > 0) { invalid.delete(input.dataset.inferField); confirmed.add(input.dataset.inferField); } else { confirmed.delete(input.dataset.inferField); invalid.add(input.dataset.inferField); } opentixWizardDraft.result = refreshed.result;
+      } finally { renderUnknownInference(); }
     });
     for (const b of document.querySelectorAll('.app-tab')) {
       b.addEventListener('click', () => showView(b.dataset.view));
