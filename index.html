@@ -2097,6 +2097,10 @@ Theatre OS · 商業計算器 v0.2 demo
     .t8-ticketing-brush-name { color:var(--t8-text-primary); font-weight:600; }
     .t8-ticketing-brush-clear + .t8-ticketing-brush-name { color:var(--t8-text-body); } /* 未指定 chip 名稱色照凍結 mock（#54524a），與票級 chip 區隔 */
     .t8-ticketing-brush-price { color:var(--t8-text-muted); font-size:var(--t8-text-caption); font-variant-numeric:tabular-nums; }
+    .t8-ticketing-brush-divider { width:1px; height:20px; background:#e6e3dc; }
+    .t8-ticketing-brush-swatch.is-sightline { background:#fff; box-shadow:inset 0 0 0 2px #c0392b; }
+    .t8-ticketing-brush-swatch.is-wheelchair { background:#fff; box-shadow:inset 0 0 0 2px #3d6ebf; }
+    .t8-ticketing-brush-swatch.is-blocked { background:var(--t8-text-body); color:#fff; text-align:center; line-height:16px; }
     /* 0820 P4：position:relative 給浮動色盤（#seatFloatPalette）當定位祖先——刻意不放在
        .grid-wrap 底下（它 overflow:hidden 會裁切貼近卡緣的色盤，見 mock f6 的色盤可以浮出
        .grid-wrap 之外）。 */
@@ -2158,6 +2162,9 @@ Theatre OS · 商業計算器 v0.2 demo
     .t8-ticketing-map-body .sm-seat.is-unset { fill:#d6d2c8; stroke:none; stroke-dasharray:none; }
     .t8-ticketing-map-body .sm-seat.is-preview { stroke:#2e2c28; stroke-width:2; }
     .t8-ticketing-map-body .sm-seat.is-sightline { stroke:#c0392b; stroke-width:2.5; }
+    .t8-ticketing-map-body .sm-seat.is-wheelchair { stroke:#3d6ebf; stroke-width:2.5; }
+    .t8-ticketing-map-body .sm-seat.is-manual { stroke:#2e2c28; stroke-width:1.6; stroke-dasharray:3 2; }
+    .t8-ticketing-map-body .sm-seat-add-target { fill:#d6d2c8; fill-opacity:.22; stroke:#a09d92; stroke-width:1.6; stroke-dasharray:3 2; cursor:pointer; }
     .t8-ticketing-map-body .sm-seat-number { font-size:4.2px; font-variant-numeric:tabular-nums; dominant-baseline:central; }
     .sm-floor-title { fill:var(--t8-text-secondary); font-size:11.5px; font-weight:700; text-anchor:middle; }
     .sm-band { cursor:zoom-in; }
@@ -2209,6 +2216,10 @@ Theatre OS · 商業計算器 v0.2 demo
     .t8-ticketing-float-swatch:hover, .t8-ticketing-float-swatch:focus-visible { box-shadow:0 0 0 2px #fff, 0 0 0 3.5px var(--t8-accent); outline:none; }
     .t8-ticketing-float-clear { width:18px; height:18px; padding:0; display:flex; align-items:center; justify-content:center; border:1px dashed var(--t8-border-input); border-radius:50%; background:transparent; color:var(--t8-text-muted); font-size:11px; cursor:pointer; }
     .t8-ticketing-float-clear:hover, .t8-ticketing-float-clear:focus-visible { border-color:var(--t8-text-muted); outline:none; }
+    .t8-ticketing-float-flags { display:flex; align-items:center; gap:6px; padding-left:8px; border-left:1px solid var(--t8-border-card-line); }
+    .t8-ticketing-float-flag { width:18px; height:18px; padding:0; border:1px solid var(--t8-border-input); border-radius:50%; background:#fff; cursor:pointer; }
+    .t8-ticketing-float-flag[aria-pressed="true"] { background:var(--t8-surface-selected); box-shadow:inset 0 0 0 1.6px var(--flag-color); }
+    .t8-ticketing-float-delete { color:var(--t8-semantic-neg); border:1px solid #dcc9c2; border-radius:8px; padding:2px 10px; background:#fff; font-size:11.5px; }
     /* 0820 P4：卡底單行提示（交接單 P4-4、mock f6:339）取代舊「選取中：… → 指定為」下拉列
        與舊圖例列（灰＝未指定 · 滾輪縮放…，已依 P4-2 刪除、不得加回）。 */
     .t8-ticketing-map-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; padding:var(--t8-space-5) var(--t8-space-9); border-top:1px solid var(--t8-border-card-line); color:var(--t8-text-body); font-size:var(--t8-text-secondary-size); }
@@ -4724,7 +4735,7 @@ Theatre OS · 商業計算器 v0.2 demo
   <script type="application/json" id="demoProject">
 {
   "formatName": "TPF",
-  "schemaVersion": "1.8.0",
+  "schemaVersion": "1.9.0",
   "meta": { "lastExportAt": null, "kind": "demo" },
   "basic": {
     "show": "歸途未晚", "company": "拾光劇團（示範）", "author": "", "durationMin": null,
@@ -4975,7 +4986,7 @@ Theatre OS · 商業計算器 v0.2 demo
   <script type="application/json" id="blankProject">
 {
   "formatName": "TPF",
-  "schemaVersion": "1.8.0",
+  "schemaVersion": "1.9.0",
   "meta": { "lastExportAt": null, "kind": "blank" },
   "basic": {
     "show": "", "company": "", "author": "", "durationMin": null,
@@ -11452,7 +11463,7 @@ Theatre OS · 商業計算器 v0.2 demo
     // engine.mjs 保留，但只是分類性質的單向同步投影，不是正本。舊檔不生成自訂分類，遷移 no-op。
     // 1.6.0 → 1.7.0（Phase C C-1）：人可讀「票圖」表新增合法空版式；
     // 只擴充版式容忍範圍，沒有資料語意變更，故遷移 no-op。
-    const SCHEMA_VERSION = '1.8.0';
+    const SCHEMA_VERSION = '1.9.0';
     const INCOME_CATEGORY_KINDS = new Set(['commercial', 'funding']);
     const INCOME_CATEGORY_NAME_MAX = 40;
     const BUILTIN_INCOME_CATEGORIES = Object.freeze([
@@ -11661,6 +11672,44 @@ Theatre OS · 商業計算器 v0.2 demo
       return grid;
     }
 
+    // C-4：seatMeta 是唯一的逐席 metadata 正本；cells 繼續只存票級 id 或 __blocked。
+    // 舊 floors flags 僅在載入時投影一次，渲染不得回讀 floors flags。
+    function normalizeGridSeatMeta(grid) {
+      if (!grid || typeof grid !== 'object') return grid;
+      const source = grid.seatMeta && typeof grid.seatMeta === 'object' && !Array.isArray(grid.seatMeta)
+        ? grid.seatMeta : {};
+      const normalized = {};
+      for (const [key, value] of Object.entries(source)) {
+        if (!/^\d+-\d+$/.test(key) || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+        const flags = value.flags && typeof value.flags === 'object' && !Array.isArray(value.flags) ? value.flags : {};
+        normalized[key] = {
+          flags: { sightline: flags.sightline === true, wheelchair: flags.wheelchair === true },
+          manual: value.manual === true,
+          sourceCell: value.sourceCell === null ? null : (typeof value.sourceCell === 'string' ? value.sourceCell : null),
+        };
+      }
+      let globalRow = 0;
+      for (const floor of Array.isArray(grid.floors) ? grid.floors : []) {
+        for (const row of Array.isArray(floor.rows) ? floor.rows : []) {
+          globalRow += 1;
+          for (const seat of Array.isArray(row.seats) ? row.seats : []) {
+            const key = `${globalRow}-${seat.col}`;
+            if (normalized[key]) continue;
+            const flags = seat.flags && typeof seat.flags === 'object' ? seat.flags : {};
+            if (flags.sightline === true || flags.wheelchair === true) {
+              normalized[key] = {
+                flags: { sightline: flags.sightline === true, wheelchair: flags.wheelchair === true },
+                manual: false,
+                sourceCell: typeof seat.sourceCell === 'string' ? seat.sourceCell : null,
+              };
+            }
+          }
+        }
+      }
+      if (Object.keys(normalized).length) grid.seatMeta = normalized; else delete grid.seatMeta;
+      return grid;
+    }
+
     // B-26：持久化旗標缺席或值域不合法時的舊檔 fallback。只讀 ticketModel／grid，絕不寫 capacity。
     function deriveSeatSourceMode(st) {
       const tiers = st && st.ticketModel && Array.isArray(st.ticketModel.tiers) ? st.ticketModel.tiers : [];
@@ -11723,6 +11772,7 @@ Theatre OS · 商業計算器 v0.2 demo
         if (!st.grid.cells) st.grid.cells = {};
         if (!Array.isArray(st.grid.tiers)) st.grid.tiers = [];
         normalizeGridFloors(st.grid);
+        normalizeGridSeatMeta(st.grid);
         expandGridPreset(st.grid);
       }
       migrateLegacyTicketModel(st);
@@ -12014,8 +12064,10 @@ Theatre OS · 商業計算器 v0.2 demo
     // 規則：主版本相符即接受。較舊→套遷移；相同→直接讀；較新→接受並告知「部分欄位可能未被解讀」，
     // 未知欄位原樣保留（round-trip 不遺失，這是第三方實作能共存的前提）；主版本不符→拒收並說明原因。
     // SCHEMA_HISTORY 由舊到新；發新版時在尾端追加，並視需要在 SCHEMA_MIGRATIONS 註冊「由該版升上去」的函式。
-    const SCHEMA_HISTORY = ['v0.2-demo3', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.7.0', '1.8.0'];
+    const SCHEMA_HISTORY = ['v0.2-demo3', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.7.0', '1.8.0', '1.9.0'];
     const SCHEMA_MIGRATIONS = {
+      // 1.8.0 → 1.9.0（C-4）。舊檔無 seatMeta 即維持缺席，遷移不寫入空物件。
+      '1.8.0': st => st,
       // 1.7.0 → 1.8.0（W2／W5）。schedule.items[].startDate 缺席與 null 同義，
       // 舊檔維持反推；遷移不批次補寫、不改任何排程結果。
       '1.7.0': st => st,
@@ -13894,6 +13946,15 @@ Theatre OS · 商業計算器 v0.2 demo
       const el = $('t8MapHint');
       if (!el) return;
       if (brushActive) {
+        if (currentBrush === '__flag_sightline' || currentBrush === '__flag_wheelchair') {
+          const label = currentBrush === '__flag_sightline' ? '視線受阻' : '輪椅';
+          el.textContent = `旗標模式：${label} · 單擊切換 · 拖曳連塗 · 雙擊整排 · Esc 退出`;
+          return;
+        }
+        if (currentBrush === '__add') {
+          el.textContent = '新增模式：點空位新增一席 · Esc 退出';
+          return;
+        }
         const tiers = ticketTiersOf();
         const idx = tiers.findIndex(t => t.id === currentBrush);
         const tier = idx >= 0 ? tiers[idx] : null;
@@ -13966,12 +14027,14 @@ Theatre OS · 商業計算器 v0.2 demo
     const GRID_UNDO_MAX = 50;
     let gridUndoStack = [];
     function pushGridUndo() {
-      gridUndoStack.push({ ...(state.grid && state.grid.cells || {}) });
+      gridUndoStack.push({ cells: { ...(state.grid && state.grid.cells || {}) }, seatMeta: JSON.parse(JSON.stringify(state.grid && state.grid.seatMeta || {})) });
       if (gridUndoStack.length > GRID_UNDO_MAX) gridUndoStack.shift();
     }
     function undoGridPaint() {
       if (!gridUndoStack.length || !state.grid) return;
-      state.grid.cells = gridUndoStack.pop();
+      const snapshot = gridUndoStack.pop();
+      state.grid.cells = snapshot.cells;
+      if (Object.keys(snapshot.seatMeta).length) state.grid.seatMeta = snapshot.seatMeta; else delete state.grid.seatMeta;
       renderGrid();
       // renderGrid() 重建 floorSeatByKey 後才有座位物件可投影，順序不可調換。
       reprojectSeatUnsellableFlags();
@@ -14013,11 +14076,14 @@ Theatre OS · 商業計算器 v0.2 demo
       const host = $('seatFloatPalette');
       if (!host || !cells.length) return;
       const tiers = ticketTiersOf();
+      const everyFlagged = flag => cells.every(rc => state.grid.seatMeta?.[rc]?.flags?.[flag] === true);
       setText('seatFloatCount', `${localeNum(cells.length)} 格 →`);
       $('seatFloatSwatches').innerHTML = tiers.map((t, i) =>
         `<button type="button" class="t8-ticketing-float-swatch" data-float-tier="${esc(t.id)}" style="background:${esc(tierFill(t, i))}" title="${esc(t.name)}" aria-label="指定為「${esc(t.name)}」"></button>`
       ).join('')
-        + `<button type="button" class="t8-ticketing-float-clear" data-float-clear title="清回未指定" aria-label="清回未指定">×</button>`;
+        + `<button type="button" class="t8-ticketing-float-clear" data-float-clear title="清回未指定" aria-label="清回未指定">×</button>`
+        + `<span class="t8-ticketing-float-flags"><button type="button" class="t8-ticketing-float-flag" data-float-flag="sightline" aria-pressed="${everyFlagged('sightline')}" style="--flag-color:#c0392b" title="視線受阻" aria-label="視線受阻"></button><button type="button" class="t8-ticketing-float-flag" data-float-flag="wheelchair" aria-pressed="${everyFlagged('wheelchair')}" style="--flag-color:#3d6ebf" title="輪椅" aria-label="輪椅"></button><button type="button" class="t8-ticketing-float-flag" data-float-block aria-pressed="${cells.every(rc => state.grid.cells[rc] === '__blocked')}" title="封席" aria-label="封席">×</button></span>`
+        + (cells.length === 1 ? '<button type="button" class="t8-ticketing-float-delete" data-float-delete>刪除此席</button>' : '');
       host.classList.remove('hidden');
       positionFloatingPalette(cells);
     }
@@ -14086,7 +14152,12 @@ Theatre OS · 商業計算器 v0.2 demo
       };
       $('brushBar').innerHTML = '<span class="t8-ticketing-brush-label">塗色筆刷</span>'
         + tiers.map((t, i) => chip(t.id, t.name, tierFill(t, i), t.price)).join('')
-        + `<button type="button" class="t8-ticketing-brush-chip" data-brush="__erase" aria-pressed="${brushActive && currentBrush === '__erase' ? 'true' : 'false'}" aria-label="以「未指定」為筆刷" style="--brush-color:var(--t8-text-ghost)"><span class="t8-ticketing-brush-swatch t8-ticketing-brush-clear">×</span><span class="t8-ticketing-brush-name">未指定</span></button>`;
+        + `<button type="button" class="t8-ticketing-brush-chip" data-brush="__erase" aria-pressed="${brushActive && currentBrush === '__erase' ? 'true' : 'false'}" aria-label="以「未指定」為筆刷" style="--brush-color:var(--t8-text-ghost)"><span class="t8-ticketing-brush-swatch t8-ticketing-brush-clear">×</span><span class="t8-ticketing-brush-name">未指定</span></button>`
+        + '<span class="t8-ticketing-brush-divider" aria-hidden="true"></span>'
+        + `<button type="button" class="t8-ticketing-brush-chip" data-brush="__flag_sightline" aria-pressed="${brushActive && currentBrush === '__flag_sightline'}" style="--brush-color:#c0392b"><span class="t8-ticketing-brush-swatch is-sightline"></span><span class="t8-ticketing-brush-name">視線受阻</span></button>`
+        + `<button type="button" class="t8-ticketing-brush-chip" data-brush="__flag_wheelchair" aria-pressed="${brushActive && currentBrush === '__flag_wheelchair'}" style="--brush-color:#3d6ebf"><span class="t8-ticketing-brush-swatch is-wheelchair"></span><span class="t8-ticketing-brush-name">輪椅</span></button>`
+        + `<button type="button" class="t8-ticketing-brush-chip" data-brush="__blocked" aria-pressed="${brushActive && currentBrush === '__blocked'}" style="--brush-color:var(--t8-text-body)"><span class="t8-ticketing-brush-swatch is-blocked">×</span><span class="t8-ticketing-brush-name">封席</span></button>`
+        + `<button type="button" class="t8-ticketing-brush-chip" data-brush="__add" aria-pressed="${brushActive && currentBrush === '__add'}" style="--brush-color:var(--t8-text-ghost)"><span class="t8-ticketing-brush-name">＋ 新增</span></button>`;
     }
 
     // ── 票圖（DESIGN/07 C.12）─────────────────────────────────────────────────
@@ -14218,14 +14289,18 @@ Theatre OS · 商業計算器 v0.2 demo
     let floorBounds = [];
     function seatCellAttrs(key) {
       const v = state.grid.cells[key];
-      const sightline = !!(floorSeatByKey.get(key)?.flags?.sightline);
+      const meta = state.grid.seatMeta && state.grid.seatMeta[key];
+      const sightline = !!(meta && meta.flags && meta.flags.sightline);
+      const wheelchair = !!(meta && meta.flags && meta.flags.wheelchair);
       const sightlineCls = sightline ? ' is-sightline' : '';
-      if (v === '__blocked') return { cls: `sm-seat is-blocked${sightlineCls}`, style: '', txt: '×', txtCls: 'sm-code sm-code-blocked' };
+      const wheelchairCls = wheelchair ? ' is-wheelchair' : '';
+      const manualCls = meta && meta.manual ? ' is-manual' : '';
+      if (v === '__blocked') return { cls: `sm-seat is-blocked${sightlineCls}${wheelchairCls}${manualCls}`, style: '', txt: '×', txtCls: 'sm-code sm-code-blocked' };
       const idx = v === undefined ? -1 : state.grid.tiers.findIndex(t => t.id === v);
-      if (idx < 0) return { cls: `sm-seat is-unset${sightlineCls}`, style: '', txt: '', txtCls: 'sm-code' };
+      if (idx < 0) return { cls: `sm-seat is-unset${sightlineCls}${wheelchairCls}${manualCls}`, style: '', txt: '', txtCls: 'sm-code' };
       const fill = tierFill(state.grid.tiers[idx], idx);
       return {
-        cls: `sm-seat${sightlineCls}`,
+        cls: `sm-seat${sightlineCls}${wheelchairCls}${manualCls}`,
         style: `fill:${fill}`,
         txt: tierCodeOf(idx),
         // 格內代號的字色逐格挑（見 inkOnFill 上方推導）；填色是 token 時 regex 不成立、退回深字。
@@ -14434,6 +14509,15 @@ Theatre OS · 商業計算器 v0.2 demo
           parts.push(`<text class="sm-ax sm-row-number" x="${ox - 10}" y="${ry + SM_SEAT_H / 2}" text-anchor="end">${esc(row.label)}</text>`);
           parts.push(`<text class="sm-ax sm-row-number" x="${ox + seatsW + 10}" y="${ry + SM_SEAT_H / 2}">${esc(row.label)}</text>`);
           const seats = row.seats.slice().sort((a, b) => a.col - b.col);
+          if (brushActive && currentBrush === '__add' && seats.length >= 2) {
+            const occupied = new Set(seats.map(seat => seat.col));
+            for (let col = seats[0].col + 1; col < seats[seats.length - 1].col; col += 1) {
+              if (occupied.has(col)) continue;
+              const key = `${globalRow}-${col}`;
+              const x = ox + (col - 1) * (SM_SEAT_W + SM_GAP);
+              parts.push(`<rect class="sm-seat sm-seat-add-target" data-rc="${key}" x="${x}" y="${ry}" width="${SM_SEAT_W}" height="${SM_SEAT_H}" rx="${SM_SEAT_W * 0.18}"><title>新增座位</title></rect>`);
+            }
+          }
           let run = null;
           for (const seat of seats) {
             const key = `${globalRow}-${seat.col}`;
@@ -14462,7 +14546,9 @@ Theatre OS · 商業計算器 v0.2 demo
       $('seatFloorChips').innerHTML = floors.map((f, i) => `<button type="button" class="t8-ticketing-chip t8-seat-floor-chip" data-floor-index="${i}" aria-pressed="false">${esc(f.name)}</button>`).join('');
       $('seatFloorFoot').classList.remove('hidden');
       const floorCount = floors.length >= 1 && floors.length <= 9 ? '一二三四五六七八九'[floors.length - 1] : localeNum(floors.length);
-      $('seatFloorFoot').innerHTML = `<span>${floorCount}層 · ${localeNum(totalRows)} 排 · 繪入 ${localeNum(totalSeats)} 席（模板：${esc(state.venueName || '未設定場館')}）</span>${floorTierLegendHtml()}<span class="t8-seat-floor-legend"><i class="t8-seat-floor-dot" style="background:#d6d2c8"></i>未指定</span><span class="t8-seat-floor-legend"><i class="t8-seat-sightline-dot"></i>視線受阻</span>`;
+      const manualSeats = Object.values(g.seatMeta || {}).filter(meta => meta && meta.manual === true).length;
+      const parsedSeats = totalSeats - manualSeats;
+      $('seatFloorFoot').innerHTML = `<span>${floorCount}層 · ${localeNum(totalRows)} 排 · 繪入 ${localeNum(totalSeats)} 席（解析 ${localeNum(parsedSeats)} ＋ 手補 ${localeNum(manualSeats)}）（模板：${esc(state.venueName || '未設定場館')}）</span>${floorTierLegendHtml()}<span class="t8-seat-floor-legend"><i class="t8-seat-floor-dot" style="background:#d6d2c8"></i>未指定</span><span class="t8-seat-floor-legend"><i class="t8-seat-sightline-dot"></i>視線受阻</span><span class="t8-seat-floor-legend"><i class="t8-seat-floor-dot" style="background:#fff;box-shadow:inset 0 0 0 2px #3d6ebf"></i>輪椅</span><span class="t8-seat-floor-legend"><i class="t8-seat-floor-dot" style="background:var(--t8-text-body)"></i>封席</span><span class="t8-seat-floor-legend"><i class="t8-seat-floor-dot" style="background:#fff;border:1.6px dashed #2e2c28"></i>手補席</span>`;
       const label = `座位票圖：${floors.length} 層，${totalRows} 排，繪入 ${totalSeats} 席`;
       el.setAttribute('aria-label', label); $('gridWrap').setAttribute('aria-label', label);
       $('gridCaption').textContent = floorGridCaption(g); $('gridSizeNote').textContent = `${totalRows} 排 · ${totalSeats} 席`;
@@ -14574,8 +14660,28 @@ Theatre OS · 商業計算器 v0.2 demo
       const byTier = unsellableByTierMap();
       for (const rc of rcList) {
         if (floorSeatByKey.size && !floorSeatByKey.has(rc)) continue;
-        if (brush === '__erase') {
+        if (brush === '__flag_sightline' || brush === '__flag_wheelchair') {
+          if (!state.grid.seatMeta) state.grid.seatMeta = {};
+          const flag = brush === '__flag_sightline' ? 'sightline' : 'wheelchair';
+          // C-4 fresh 驗收（2026-09-01）抓到的資料遺失：這行原本硬寫 `sourceCell: null`，
+          // 於是**使用者只是替一個解析席標個旗標，那席的來源座標就沒了**（實測 floors 專案某席
+          // `sourceCell:"A1"` 塗標後匯出變 null）。`sourceCell` 是「這席從哪來」的憑證——
+          // 禁合成鐵律、手補分帳、逐席對帳全都靠它，靜默清空等於把來歷抹掉。
+          // ⚠️ `floorSeatByKey` 就在本函式上方五行剛用過，取得回真值。
+          // SPEC §4.5.1a：`sourceCell` ＝ 來源儲存格座標；**手補席固定 null**——反過來說，
+          // 解析席就不該是 null。新建 meta 時沿用幾何層的真值，沒有幾何層（legacy 10×10）才 null。
+          const meta = state.grid.seatMeta[rc]
+            || { flags: { sightline: false, wheelchair: false }, manual: false,
+                 sourceCell: floorSeatByKey.get(rc)?.sourceCell ?? null };
+          meta.flags = { sightline: meta.flags?.sightline === true, wheelchair: meta.flags?.wheelchair === true };
+          meta.flags[flag] = !meta.flags[flag];
+          state.grid.seatMeta[rc] = meta;
+        } else if (brush === '__erase') {
           if (rc in cells) delete cells[rc];
+        } else if (brush === '__blocked') {
+          if (cells[rc] === '__blocked') delete cells[rc]; else cells[rc] = '__blocked';
+        } else if (brush === '__add') {
+          continue;
         } else {
           cells[rc] = brush;
         }
@@ -14583,6 +14689,44 @@ Theatre OS · 商業計算器 v0.2 demo
         styleCell(rc);
       }
       schedRecalc();
+    }
+    function deleteSeatByKey(rc) {
+      delete state.grid.cells[rc];
+      if (state.grid.seatMeta) {
+        delete state.grid.seatMeta[rc];
+        if (!Object.keys(state.grid.seatMeta).length) delete state.grid.seatMeta;
+      }
+      const seat = floorSeatByKey.get(rc);
+      if (seat && Array.isArray(state.grid.floors)) {
+        for (const floor of state.grid.floors) for (const row of floor.rows || []) {
+          const index = (row.seats || []).indexOf(seat);
+          if (index >= 0) row.seats.splice(index, 1);
+        }
+      }
+    }
+    function addManualSeat(rc, seatNo) {
+      if (!state.grid.seatMeta) state.grid.seatMeta = {};
+      state.grid.cells[rc] = state.grid.cells[rc] || (ticketTiersOf()[0]?.id || '__blocked');
+      state.grid.seatMeta[rc] = { flags: { sightline: false, wheelchair: false }, manual: true, sourceCell: null };
+      const [rowNo, col] = rc.split('-').map(Number);
+      if (Array.isArray(state.grid.floors) && !floorSeatByKey.has(rc)) {
+        let cursor = 0;
+        for (const floor of state.grid.floors) for (const row of floor.rows || []) {
+          cursor += 1;
+          if (cursor === rowNo) row.seats.push({ no: Number(seatNo), col, sourceCell: null });
+        }
+      }
+      return state.grid.seatMeta[rc];
+    }
+    function inferredManualSeatNo(rc) {
+      const [rowNo, col] = rc.split('-').map(Number);
+      if (!floorSeatByKey.size) return col;
+      const sameRow = Array.from(floorSeatByKey.entries())
+        .filter(([key]) => Number(key.split('-')[0]) === rowNo)
+        .map(([key, seat]) => ({ col: Number(key.split('-')[1]), no: Number(seat.no) }))
+        .filter(seat => Number.isFinite(seat.col) && Number.isFinite(seat.no))
+        .sort((a, b) => Math.abs(a.col - col) - Math.abs(b.col - col));
+      return sameRow.length ? sameRow[0].no + (col - sameRow[0].col) : col;
     }
     // 整排套用（T6，設計 02「整排套用模式鈕（點排號→整排刷成當前筆刷）」）：開關由 #rowApplyBtn
     // 切換，開啟時點左側排號整排套用目前筆刷；不影響一般逐格／框選塗色。
@@ -19196,6 +19340,7 @@ Theatre OS · 商業計算器 v0.2 demo
             return;
           }
           state.grid.cells = {};
+          delete state.grid.seatMeta;
         }
         state.grid[key] = next;
         if (next === null && hadLegacyGrid) {
@@ -19229,6 +19374,7 @@ Theatre OS · 商業計算器 v0.2 demo
     $('gridClearBtn').addEventListener('click', async e => {
       if (!await requestInlineConfirmation(clearGridConfirmationText, e.currentTarget)) return;
       state.grid.cells = {};
+      delete state.grid.seatMeta;
       renderGrid();
       // B-35-⑨：全部座位回到未指定＝旗標投影一併歸零（與 undoGridPaint 同一順序）。
       reprojectSeatUnsellableFlags();
@@ -19351,6 +19497,7 @@ Theatre OS · 商業計算器 v0.2 demo
       const btn = e.target.closest('[data-brush]');
       if (!btn) return;
       const id = btn.dataset.brush;
+      const wasAddMode = brushActive && currentBrush === '__add';
       if (brushActive && currentBrush === id) {
         brushActive = false;
       } else {
@@ -19360,19 +19507,34 @@ Theatre OS · 商業計算器 v0.2 demo
       closeFloatingPalette();
       renderBrushBar();
       renderPalette();
+      if (wasAddMode || (brushActive && currentBrush === '__add')) renderGrid();
       recalc(); // renderPalette() 重建 #tkGrossFull 為空殼，補一次 recalc 回填滿售票房（不補＝進出筆刷即清空，HEAD 同病）
     });
     // 0820 P4（交接單 P4-4b）：浮動色盤——點某個票種色點＝套用到目前選取的格子；點虛線
     // ×＝清回未指定。兩者都是「與目前全域筆刷無關」的一次性套色，走 applyBrushToCells()
     // 的第二參數，不動 currentBrush／brushActive。
-    $('seatFloatSwatches').addEventListener('click', e => {
+    $('seatFloatSwatches').addEventListener('click', async e => {
       const clearBtn = e.target.closest('[data-float-clear]');
       const swatchBtn = e.target.closest('[data-float-tier]');
-      if (!clearBtn && !swatchBtn) return;
+      const flagBtn = e.target.closest('[data-float-flag]');
+      const blockBtn = e.target.closest('[data-float-block]');
+      const deleteBtn = e.target.closest('[data-float-delete]');
+      if (!clearBtn && !swatchBtn && !flagBtn && !blockBtn && !deleteBtn) return;
       const cells = Array.from(selectedSeatSet);
       if (!cells.length) { closeFloatingPalette(); return; }
+      if (deleteBtn) {
+        const rc = cells[0];
+        const manual = state.grid.seatMeta?.[rc]?.manual === true;
+        if (!manual) {
+          const parsed = Array.from(floorSeatByKey.keys()).filter(key => state.grid.seatMeta?.[key]?.manual !== true).length;
+          if (!await requestInlineConfirmation(`刪除後匯出對帳將記為解析 ${Math.max(0, parsed - 1)}`, deleteBtn)) return;
+        }
+        pushGridUndo();
+        deleteSeatByKey(rc);
+        renderGrid(); renderPalette(); updateMapSeatCounts(); closeFloatingPalette(); return;
+      }
       pushGridUndo();
-      applyBrushToCells(cells, clearBtn ? '__erase' : swatchBtn.dataset.floatTier);
+      applyBrushToCells(cells, flagBtn ? `__flag_${flagBtn.dataset.floatFlag}` : (blockBtn ? '__blocked' : (clearBtn ? '__erase' : swatchBtn.dataset.floatTier)));
       updateMapSeatCounts();
       closeFloatingPalette();
     });
@@ -19382,6 +19544,7 @@ Theatre OS · 商業計算器 v0.2 demo
       brushActive = false;
       renderBrushBar();
       renderPalette();
+      if (currentBrush === '__add') renderGrid();
       recalc(); // 同 dock chip listener：退出筆刷後回填滿售票房
     });
     // 0820 P4（交接單 P4-4c 共通「0 鍵＝清回未指定」）：筆刷模式中把筆刷切成「未指派」
@@ -19528,12 +19691,40 @@ Theatre OS · 商業計算器 v0.2 demo
     // 雙擊手勢的第二次 pointerdown（與第一次同格同色）在 undo stack 多留一筆沒有視覺變化
     // 的空白步驟。
     function brushPaintPointerdown(rc) {
+      if (currentBrush === '__add') {
+        const liveSeat = document.querySelector(`#seatGrid [data-rc="${rc}"]`);
+        if (!liveSeat) return;
+        const old = $('seatManualInput');
+        if (old) old.remove();
+        const input = document.createElement('input');
+        input.id = 'seatManualInput';
+        input.type = 'number';
+        input.className = 'bz2-ri';
+        input.setAttribute('aria-label', '座號');
+        input.value = String(floorSeatByKey.get(rc)?.no || inferredManualSeatNo(rc));
+        input.style.position = 'absolute';
+        const rect = liveSeat.getBoundingClientRect();
+        const bodyRect = liveSeat.closest('.t8-ticketing-map-body').getBoundingClientRect();
+        input.style.left = `${rect.left - bodyRect.left}px`;
+        input.style.top = `${rect.top - bodyRect.top}px`;
+        input.style.width = '52px';
+        liveSeat.closest('.t8-ticketing-map-body').append(input);
+        input.addEventListener('keydown', event => {
+          if (event.key === 'Escape') { input.remove(); brushActive = false; renderBrushBar(); renderTicketMapHint(); return; }
+          if (event.key !== 'Enter') return;
+          pushGridUndo();
+          addManualSeat(rc, input.value || rc.split('-')[1]);
+          input.remove(); renderGrid(); renderPalette(); updateMapSeatCounts();
+        });
+        input.focus(); input.select();
+        return;
+      }
       const cells = state.grid.cells;
       const currentVal = cells[rc];
       const nextVal = currentBrush === '__erase' ? undefined : currentBrush;
       brushDragging = true;
       brushLastRc = rc;
-      if (currentVal === nextVal) return;
+      if (!currentBrush.startsWith('__flag_') && currentBrush !== '__blocked' && currentVal === nextVal) return;
       pushGridUndo();
       applyBrushToCells([rc]);
       updateMapSeatCounts();
