@@ -2198,6 +2198,7 @@ Theatre OS · 商業計算器 v0.2 demo
        逐位元組相同（#e9f1ee／#356a5e／#4e8a7c＝--t8-accent-tint／--t8-accent-hover／--t8-accent），
        故走 token 不寫死色（§3.3）。 */
     .t8-seat-import-banner { padding:8px 20px; display:flex; align-items:center; gap:8px; font-size:12px; color:var(--t8-accent-hover); background:var(--t8-accent-tint); }
+    .t8-infer-banner { background:var(--t8-accent-tint); color:var(--t8-accent-hover); padding:8px 22px; font-size:12.5px; border-bottom:1px solid #dbe8e2; }
     .t8-seat-import-mark { color:var(--t8-accent); }
     .t8-seat-band-hint { padding:0 20px 10px; color:var(--t8-text-muted); font-size:var(--t8-text-caption); }
     .t8-seat-floor-legend { display:inline-flex; align-items:center; gap:5px; }
@@ -4748,7 +4749,7 @@ Theatre OS · 商業計算器 v0.2 demo
   <script type="application/json" id="demoProject">
 {
   "formatName": "TPF",
-  "schemaVersion": "1.9.0",
+  "schemaVersion": "1.10.0",
   "meta": { "lastExportAt": null, "kind": "demo" },
   "basic": {
     "show": "歸途未晚", "company": "拾光劇團（示範）", "author": "", "durationMin": null,
@@ -4999,7 +5000,7 @@ Theatre OS · 商業計算器 v0.2 demo
   <script type="application/json" id="blankProject">
 {
   "formatName": "TPF",
-  "schemaVersion": "1.9.0",
+  "schemaVersion": "1.10.0",
   "meta": { "lastExportAt": null, "kind": "blank" },
   "basic": {
     "show": "", "company": "", "author": "", "durationMin": null,
@@ -8557,6 +8558,51 @@ Theatre OS · 商業計算器 v0.2 demo
         return `${shown}${literals.length > limit ? `／…共 ${literals.length} 種` : ''}字面 · 灰底排號格`;
       }
 
+      // C-2f-2：重用鍵只放版面結構。陣列是由解析後逐排席數量得；不放檔名、表名、
+      // 色碼、排號或任何格內字串。固定鍵名也屬隱私邊界守門的掃描範圍。
+      function savedLayoutFingerprint(inferred) {
+        if (!inferred?.ok || !inferred.result || !inferred.config) return null;
+        const rows = inferred.result.floors.flatMap(floor => floor.rows);
+        return {
+          version: 1,
+          geometry: {
+            rowCount: rows.length,
+            seatsPerRow: rows.map(row => row.seats.length),
+            scanWidth: inferred.config.scan[1] - inferred.config.scan[0] + 1,
+            floorCount: inferred.config.floors.length,
+          },
+          rowLabels: {
+            numeric: inferred.config.numericRowLabels === true,
+            hostColumnCount: inferred.config.hostColumns.length,
+            skippedColumnCount: inferred.config.skipColumns.length,
+          },
+          colorCount: Object.keys(inferred.detected.histogram).length,
+        };
+      }
+
+      function sameSavedLayoutFingerprint(left, right) {
+        return Boolean(left && right) && JSON.stringify(left) === JSON.stringify(right);
+      }
+
+      function mapConfigValue(value, encode) {
+        if (value instanceof RegExp) return encode ? { regexSource: value.source, regexFlags: value.flags } : value;
+        if (Array.isArray(value)) return value.map(item => mapConfigValue(item, encode));
+        if (!value || typeof value !== 'object') return value;
+        if (!encode && typeof value.regexSource === 'string' && typeof value.regexFlags === 'string') {
+          return new RegExp(value.regexSource, value.regexFlags);
+        }
+        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, mapConfigValue(item, encode)]));
+      }
+      function serializeSavedLayoutConfig(config) { return mapConfigValue(config, true); }
+      function restoreSavedLayoutConfig(config) { return mapConfigValue(config, false); }
+
+      function inferSavedLayoutName(book, inferred, fallbackName = '') {
+        const sheet = book?.sheets?.find(item => item.name === inferred?.config?.sheet);
+        const a1 = sheet?.cells?.get('A1')?.value;
+        if (typeof a1 === 'string' && a1.trim()) return a1.trim();
+        return String(fallbackName).replace(/\.[^.]+$/, '') || '未命名版面';
+      }
+
       /** 不查已知族設定表的盲推斷入口；測試直接釘死查表遮罩。 */
       function inferUnknownOpentixConfig(book, options = {}) { return 推導設定(book, options.sheetName); }
       /** 已知族只回報分類候選；四族全未命中才走真推斷。 */
@@ -8572,7 +8618,7 @@ Theatre OS · 商業計算器 v0.2 demo
       }
       function 可輸出設定(config) { return Object.fromEntries(Object.entries(config).map(([key, value]) => [key, value instanceof RegExp ? value.toString() : Array.isArray(value) ? value.map(item => item instanceof RegExp ? item.toString() : item) : value])); }
       async function inferOpentixFile(path) { const book = await readXlsx(new Uint8Array(await readFile(path))); const result = inferOpentixConfigs(book); return { ...result, candidates: result.candidates.map(item => ({ ...item, ...(item.config ? { config: 可輸出設定(item.config) } : {}), result: undefined })) }; }
-      window.__opentixInferInline = { rederiveUnknownOpentixConfig, inferUnknownOpentixConfig, inferOpentixConfigs, inferOpentixFile, summarizeNonSeatLiterals };
+      window.__opentixInferInline = { rederiveUnknownOpentixConfig, inferUnknownOpentixConfig, inferOpentixConfigs, inferOpentixFile, summarizeNonSeatLiterals, savedLayoutFingerprint, sameSavedLayoutFingerprint, serializeSavedLayoutConfig, restoreSavedLayoutConfig, inferSavedLayoutName };
     })();
     /* ===INLINE:opentix-infer-END=== */
   </script>
@@ -11643,7 +11689,7 @@ Theatre OS · 商業計算器 v0.2 demo
     // engine.mjs 保留，但只是分類性質的單向同步投影，不是正本。舊檔不生成自訂分類，遷移 no-op。
     // 1.6.0 → 1.7.0（Phase C C-1）：人可讀「票圖」表新增合法空版式；
     // 只擴充版式容忍範圍，沒有資料語意變更，故遷移 no-op。
-    const SCHEMA_VERSION = '1.9.0';
+    const SCHEMA_VERSION = '1.10.0';
     const INCOME_CATEGORY_KINDS = new Set(['commercial', 'funding']);
     const INCOME_CATEGORY_NAME_MAX = 40;
     const BUILTIN_INCOME_CATEGORIES = Object.freeze([
@@ -11890,6 +11936,19 @@ Theatre OS · 商業計算器 v0.2 demo
       return grid;
     }
 
+    // C-2f-2：savedLayouts 是選配的專案內版面記憶；舊檔缺席就維持缺席。
+    function normalizeGridSavedLayouts(grid) {
+      if (!grid || typeof grid !== 'object' || !Object.prototype.hasOwnProperty.call(grid, 'savedLayouts')) return grid;
+      if (!Array.isArray(grid.savedLayouts)) { delete grid.savedLayouts; return grid; }
+      grid.savedLayouts = grid.savedLayouts.filter(item => item && typeof item === 'object' && !Array.isArray(item)
+        && typeof item.name === 'string' && item.name.trim()
+        && item.config && typeof item.config === 'object' && !Array.isArray(item.config)
+        && item.matchFingerprint && typeof item.matchFingerprint === 'object' && !Array.isArray(item.matchFingerprint)
+        && typeof item.savedAt === 'string').map(item => ({ ...item, name: item.name.trim() }));
+      if (!grid.savedLayouts.length) delete grid.savedLayouts;
+      return grid;
+    }
+
     // B-26：持久化旗標缺席或值域不合法時的舊檔 fallback。只讀 ticketModel／grid，絕不寫 capacity。
     function deriveSeatSourceMode(st) {
       const tiers = st && st.ticketModel && Array.isArray(st.ticketModel.tiers) ? st.ticketModel.tiers : [];
@@ -11953,6 +12012,7 @@ Theatre OS · 商業計算器 v0.2 demo
         if (!Array.isArray(st.grid.tiers)) st.grid.tiers = [];
         normalizeGridFloors(st.grid);
         normalizeGridSeatMeta(st.grid);
+        normalizeGridSavedLayouts(st.grid);
         expandGridPreset(st.grid);
       }
       migrateLegacyTicketModel(st);
@@ -12244,8 +12304,10 @@ Theatre OS · 商業計算器 v0.2 demo
     // 規則：主版本相符即接受。較舊→套遷移；相同→直接讀；較新→接受並告知「部分欄位可能未被解讀」，
     // 未知欄位原樣保留（round-trip 不遺失，這是第三方實作能共存的前提）；主版本不符→拒收並說明原因。
     // SCHEMA_HISTORY 由舊到新；發新版時在尾端追加，並視需要在 SCHEMA_MIGRATIONS 註冊「由該版升上去」的函式。
-    const SCHEMA_HISTORY = ['v0.2-demo3', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.7.0', '1.8.0', '1.9.0'];
+    const SCHEMA_HISTORY = ['v0.2-demo3', '0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.7.0', '0.8.0', '0.9.0', '0.10.0', '1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0', '1.7.0', '1.8.0', '1.9.0', '1.10.0'];
     const SCHEMA_MIGRATIONS = {
+      // 1.9.0 → 1.10.0（C-2f-2）。舊檔無 savedLayouts 即維持缺席，不生成空陣列。
+      '1.9.0': st => st,
       // 1.8.0 → 1.9.0（C-4）。舊檔無 seatMeta 即維持缺席，遷移不寫入空物件。
       '1.8.0': st => st,
       // 1.7.0 → 1.8.0（W2／W5）。schedule.items[].startDate 缺席與 null 同義，
@@ -14437,14 +14499,14 @@ Theatre OS · 商業計算器 v0.2 demo
     // 草稿刻意不放進 state：autosave 可照常執行，但重載後不會把「只填完、尚未按建立」
     // 誤當成已建立的 legacy 票圖。按下空白繪製時才一次寫入 state。
     const blankGridDraft = { rows: null, cols: null };
-    const opentixWizardDraft = { file: null, bytes: null, book: null, family: null, sheetName: null, inspection: null, result: null, inferred: null };
+    const opentixWizardDraft = { file: null, bytes: null, book: null, family: null, sheetName: null, inspection: null, result: null, inferred: null, matchFingerprint: null, remembered: false, layoutName: '' };
     // C-2c ⑧：W3「已匯入模板」橫幅的資料。刻意**不進 state**——它是「這一次匯入完成了」的
     // 回饋、不是專案資料；寫進 schema 等於未經授權加欄位（B-35-⑨ 只授權 tiers[].unsellable）。
     // 模組層暫態 → 依 §6-50 由 setActiveState() 單一入口清空。宣告放這裡（而不是靠近使用處）
     // 是因為 setActiveState() 就在下面十行，let 沒有 hoist 初始化，放後面會踩 TDZ。
     let opentixLandedBanner = null;
     function resetOpentixWizard() {
-      Object.assign(opentixWizardDraft, { file: null, bytes: null, book: null, family: null, sheetName: null, inspection: null, result: null, inferred: null });
+      Object.assign(opentixWizardDraft, { file: null, bytes: null, book: null, family: null, sheetName: null, inspection: null, result: null, inferred: null, matchFingerprint: null, remembered: false, layoutName: '' });
       const wizard = $('opentixWizard');
       if (wizard) { wizard.hidden = true; wizard.innerHTML = ''; }
       $('seatmap')?.classList.remove('is-opentix-wizard');
@@ -19081,7 +19143,15 @@ Theatre OS · 商業計算器 v0.2 demo
         if (!await requestInlineConfirmation(opentixReplaceConfirmText(Object.keys(g.cells || {}).length), trigger)) return;
       }
       // ③ 寫入集：grid.floors（走 normalizeGridFloors）＋同命名空間 cells＋ticketModel.tiers[]。
-      state.grid = { rows: null, cols: null, tiers: plan.gridTiers, cells: plan.cells, floors: plan.floors };
+      // C-2f-2 的版面記憶也在這一次 state.grid 取代內寫入，不另開第二筆 mutation。
+      const savedLayouts = Array.isArray(g.savedLayouts) ? g.savedLayouts.slice() : [];
+      if (opentixWizardDraft.inferred?.ok) {
+        const matchFingerprint = opentixWizardDraft.matchFingerprint;
+        const saved = { name: opentixWizardDraft.layoutName, matchFingerprint, config: window.__opentixInferInline.serializeSavedLayoutConfig(opentixWizardDraft.inferred.config), savedAt: new Date().toISOString() };
+        const existing = savedLayouts.findIndex(item => window.__opentixInferInline.sameSavedLayoutFingerprint(item.matchFingerprint, matchFingerprint));
+        if (existing >= 0) savedLayouts[existing] = saved; else savedLayouts.push(saved);
+      }
+      state.grid = { rows: null, cols: null, tiers: plan.gridTiers, cells: plan.cells, floors: plan.floors, ...(savedLayouts.length ? { savedLayouts } : {}) };
       normalizeGridFloors(state.grid);
       state.ticketModel = { tiers: plan.modelTiers };
       // 整組票種被換掉＝所有以舊 tier id／舊 cells 快照為內容的暫態全部過期。
@@ -19124,12 +19194,18 @@ Theatre OS · 商業計算器 v0.2 demo
     function opentixFamilyName(key) { return window.__opentixParseInline.OPENTIX_FAMILIES[key]?.venue || key; }
     function opentixRowFormat(pattern) { return pattern.source.replace(/^\^/, '').replace(/\$$/, '').replace(/\\d\+|\(\\d\+\)/g, 'N').replace(/\\\//g, '/'); }
     function opentixOpenWizard() { $('opentixFile').click(); }
+    const opentixRetryLabel = '重新辨識';
     function opentixShell(body, foot = '') {
       return `<div class="t8-opentix-head"><b>Opentix 票圖匯入精靈</b><span class="t8-opentix-pill">辨識結果</span></div>${body}${foot}`;
     }
     function opentixInferRowFeedback(inferred, key, field) {
       const invalid = inferred.invalid?.has(key);
-      const certainty = !invalid && inferred.confirmed?.has(key) ? { level:'已確認', evidence:'使用者已修正並重新解析預覽' } : inferred.confidence[field];
+      const confirmed = !invalid && inferred.confirmed?.has(key);
+      const certainty = confirmed
+        ? { level:'已確認', evidence:'使用者已修正並重新解析預覽' }
+        : opentixWizardDraft.remembered && key !== '合計席數'
+          ? { level:'記住的版面', evidence:'' }
+          : inferred.confidence[field];
       return { certainty, error: invalid ? '重算結果 0 席——請修正座位區範圍或排號位置' : '' };
     }
     function opentixInferLineHtml(inferred, key, value, field, editable=false, note='') {
@@ -19141,10 +19217,15 @@ Theatre OS · 商業計算器 v0.2 demo
       const inferred = opentixWizardDraft.inferred;
       if (!inferred?.ok) return false;
       const rows = inferred.result.floors.flatMap(floor => floor.rows), colors = Object.keys(inferred.detected.histogram);
-      const line = (...args) => opentixInferLineHtml(inferred, ...args);
+      const line = (...args) => {
+        if (args[0] === '合計席數') args[4] = '仍逐格重數本檔，非沿用舊值';
+        return opentixInferLineHtml(inferred, ...args);
+      };
       const preview = rows.map(row => `<div class="t8-infer-preview-row"><span class="t8-infer-note">${esc(row.label)}</span><span>${row.seats.map(seat=>`<i class="t8-infer-seat" style="background:#${esc(seat.fillHex)}"></i>`).join('')}</span><span class="t8-infer-note">${row.seats.length} 席</span></div>`).join('');
       const legend = colors.slice(0,4).map((hex,index) => `<span><i class="t8-infer-swatch" style="background:#${esc(hex)}"></i>分類 ${index + 1} · ${inferred.detected.histogram[hex]} 格</span>`).join('　');
-      $('opentixWizard').innerHTML = `<div class="t8-opentix-head"><b>未知版面 · 自動推斷結果</b><span class="t8-infer-note">${esc(opentixWizardDraft.file.name)} · 工作表「${esc(inferred.result.sourceSheet)}」· 值格 ${inferred.result.valueCells}</span></div><div>${line('座位區範圍',inferred.detected.range,'range',true)}${line('排數 × 每排值格',`${inferred.detected.rows} 排 × ${inferred.detected.maxPerRow} 格`,'dimensions',false,'衍生值（由座位區範圍決定）')}${line('排號位置',inferred.detected.rowLabels,'rowLabels',true)}${line('非座位格',window.__opentixInferInline.summarizeNonSeatLiterals(inferred.detected.nonSeatLiterals),'exclusions',false,'不計入席數；多種字面時摘要顯示不逐列')}${line('票區色',`${colors.length} 種`,'colors',false,'全部建為候選分類，匯入後可自行命名')}${line('合計席數',`${inferred.detected.seats} 席`,'seats')}</div><div class="t8-infer-preview"><div class="t8-infer-note">推斷預覽</div>${preview}<div class="t8-infer-legend">色票候選：${legend}　<span class="t8-infer-note">…共 ${colors.length} 種（匯入後可命名與改價）</span></div></div><div class="t8-opentix-foot"><span class="t8-infer-note">匯入前不寫入任何資料；匯入後可於票圖直接「＋新增」補畫遺漏席位或修正旗標。</span><span><button type="button" class="secondary" id="opentixInferRetryBtn">重新推斷</button><button type="button" id="opentixCancelBtn">取消</button><button type="button" class="primary" id="opentixCommitBtn">以此設定匯入</button></span></div>`;
+      const banner = opentixWizardDraft.remembered ? '<div class="t8-infer-banner">已套用系統圖檔，如非此場館，請按「重新辨識」</div>' : '';
+      const layoutName = `<div class="t8-infer-row"><span class="t8-infer-key">版面名稱</span><span><span class="t8-infer-value">${esc(opentixWizardDraft.layoutName)}</span><span class="t8-infer-confidence">${opentixWizardDraft.remembered ? '記住的版面' : '自動'}</span><span class="t8-infer-note">　偵測自檔內場館名，可改；匯入後本專案記住此版面，再匯同館檔自動套用</span></span><button type="button" class="t8-infer-action" data-infer-edit="版面名稱">改</button></div>`;
+      $('opentixWizard').innerHTML = `${banner}<div class="t8-opentix-head"><b>未知版面 · 自動推斷結果</b><span class="t8-infer-note">${esc(opentixWizardDraft.file.name)} · 工作表「${esc(inferred.result.sourceSheet)}」· 值格 ${inferred.result.valueCells}</span></div><div>${line('座位區範圍',inferred.detected.range,'range',true)}${line('排數 × 每排值格',`${inferred.detected.rows} 排 × ${inferred.detected.maxPerRow} 格`,'dimensions',false,'衍生值（由座位區範圍決定）')}${line('排號位置',inferred.detected.rowLabels,'rowLabels',true)}${line('非座位格',window.__opentixInferInline.summarizeNonSeatLiterals(inferred.detected.nonSeatLiterals),'exclusions',false,'不計入席數；多種字面時摘要顯示不逐列')}${line('票區色',`${colors.length} 種`,'colors',false,'全部建為候選分類，匯入後可自行命名')}${line('合計席數',`${inferred.detected.seats} 席`,'seats')}</div>${layoutName}<div class="t8-infer-preview"><div class="t8-infer-note">推斷預覽</div>${preview}<div class="t8-infer-legend">色票候選：${legend}　<span class="t8-infer-note">…共 ${colors.length} 種（匯入後可命名與改價）</span></div></div><div class="t8-opentix-foot"><span class="t8-infer-note">匯入前不寫入任何資料；匯入後可於票圖直接「＋新增」補畫遺漏席位或修正旗標。</span><span><button type="button" class="secondary" id="opentixInferRetryBtn">重新辨識</button><button type="button" id="opentixCancelBtn">取消</button><button type="button" class="primary" id="opentixCommitBtn">以此設定匯入</button></span></div>`;
       return true;
     }
     function renderOpentixInspection() {
@@ -19167,7 +19248,7 @@ Theatre OS · 商業計算器 v0.2 demo
     function renderOpentixChoices(choice) {
       const excluded = opentixWizardDraft.inspection.sheets.filter(sheet => sheet.reason).map(sheet => `<span class="t8-opentix-option is-excluded">${esc(sheet.name)}<small>已排除 · ${esc(sheet.reason)}</small></span>`).join('');
       const choices = choice.sheetCandidates.map(sheet => `<button type="button" class="t8-opentix-option" data-opentix-sheet="${esc(sheet.name)}">${esc(sheet.name)}<small>${sheet.valueCells} 格值 · ${sheet.colorCount} 色</small></button>`).join('');
-      $('opentixWizard').innerHTML = opentixShell(`<div class="t8-opentix-body"><div class="t8-opentix-file">▣ ${esc(opentixWizardDraft.file.name)}</div><div class="t8-opentix-label">工作表</div><div class="t8-opentix-options">${choices}${excluded}</div></div>`, '<div class="t8-opentix-foot"><button type="button" class="secondary" id="opentixRetryBtn">重新辨識</button><button type="button" id="opentixCancelBtn">取消</button></div>');
+      $('opentixWizard').innerHTML = opentixShell(`<div class="t8-opentix-body"><div class="t8-opentix-file">▣ ${esc(opentixWizardDraft.file.name)}</div><div class="t8-opentix-label">工作表</div><div class="t8-opentix-options">${choices}${excluded}</div></div>`, `<div class="t8-opentix-foot"><button type="button" class="secondary" id="opentixRetryBtn">${opentixRetryLabel}</button><button type="button" id="opentixCancelBtn">取消</button></div>`);
     }
     function renderOpentixResult(result) {
       const rows = result.floors.flatMap(floor => floor.rows);
@@ -19187,7 +19268,7 @@ Theatre OS · 商業計算器 v0.2 demo
       const unknownBlock = unknown.length ? `<div class="t8-opentix-section"><div>● ${unknown.length} 色未列入圖例，將照色建立分類</div><div class="t8-opentix-options">${unknown.map(item => `<span><i class="t8-opentix-swatch" style="display:inline-block;background:#${esc(item.fillHex)}"></i> ${esc(item.name || `#${item.fillHex}`)} <b>${item.count}</b> 格</span>`).join('')}</div></div>` : '';
       const allSheets = opentixWizardDraft.inspection.sheets;
       const sheetPills = allSheets.map(sheet => sheet.reason ? `<span class="t8-opentix-option is-excluded">${esc(sheet.name)}<small>已排除 · ${esc(sheet.reason)}</small></span>` : `<button type="button" class="t8-opentix-option ${sheet.name === result.sourceSheet ? 'is-active' : ''}" data-opentix-sheet="${esc(sheet.name)}">${esc(sheet.name)}<small>${sheet.valueCells} 格值 · ${sheet.colorCount} 色</small></button>`).join('');
-      $('opentixWizard').innerHTML = opentixShell(`<div class="t8-opentix-body"><div class="t8-opentix-file">▣ ${esc(opentixWizardDraft.file.name)}</div><div class="t8-opentix-label">工作表</div><div class="t8-opentix-options">${sheetPills}</div><div class="t8-opentix-section"><div class="t8-opentix-label">辨識摘要</div><div class="t8-opentix-summary">${summary}</div>${unresolvedText}</div><div class="t8-opentix-rule">已偵測排號格式「${esc(opentixRowFormat(window.__opentixParseInline.OPENTIX_FAMILIES[opentixWizardDraft.family].rowPattern))}」・已排除裝飾格 <b>${result.excluded.decorativeCells}</b> 格</div><div class="t8-opentix-section"><div class="t8-opentix-label">將建立票種 · ${result.candidateTiers.length} 種</div><div class="t8-opentix-rule">顏色照原檔複製；名稱取圖例文字，缺圖例則依序編號「分類 N」；票價顯示原檔已採到的值，未採到則「尚未輸入」</div><div class="t8-opentix-tier"><span></span><b>色塊 · 名稱</b><b>席數</b><b>票價</b></div>${tierRows}</div>${unknownBlock}</div>`, '<div class="t8-opentix-foot"><button type="button" class="secondary" id="opentixRetryBtn">重新辨識</button><button type="button" id="opentixCancelBtn">取消</button><button type="button" class="primary" id="opentixCommitBtn">匯入</button></div>');
+      $('opentixWizard').innerHTML = opentixShell(`<div class="t8-opentix-body"><div class="t8-opentix-file">▣ ${esc(opentixWizardDraft.file.name)}</div><div class="t8-opentix-label">工作表</div><div class="t8-opentix-options">${sheetPills}</div><div class="t8-opentix-section"><div class="t8-opentix-label">辨識摘要</div><div class="t8-opentix-summary">${summary}</div>${unresolvedText}</div><div class="t8-opentix-rule">已偵測排號格式「${esc(opentixRowFormat(window.__opentixParseInline.OPENTIX_FAMILIES[opentixWizardDraft.family].rowPattern))}」・已排除裝飾格 <b>${result.excluded.decorativeCells}</b> 格</div><div class="t8-opentix-section"><div class="t8-opentix-label">將建立票種 · ${result.candidateTiers.length} 種</div><div class="t8-opentix-rule">顏色照原檔複製；名稱取圖例文字，缺圖例則依序編號「分類 N」；票價顯示原檔已採到的值，未採到則「尚未輸入」</div><div class="t8-opentix-tier"><span></span><b>色塊 · 名稱</b><b>席數</b><b>票價</b></div>${tierRows}</div>${unknownBlock}</div>`, `<div class="t8-opentix-foot"><button type="button" class="secondary" id="opentixRetryBtn">${opentixRetryLabel}</button><button type="button" id="opentixCancelBtn">取消</button><button type="button" class="primary" id="opentixCommitBtn">匯入</button></div>`);
     }
 
     // ---------- 事件 ----------
@@ -19202,9 +19283,22 @@ Theatre OS · 商業計算器 v0.2 demo
         const parser = window.__opentixParseInline;
         const book = await xlsx.readXlsx(bytes);
         const inspection = parser.parseOpentixBook(book, 'auto', { fillHexOf: xlsx.fillHexOf });
-        const inferred = inspection.status === 'none' ? window.__opentixInferInline.inferUnknownOpentixConfig(book) : null;
+        let inferred = inspection.status === 'none' ? window.__opentixInferInline.inferUnknownOpentixConfig(book) : null;
+        let remembered = false;
+        let layoutName = inferred?.ok ? window.__opentixInferInline.inferSavedLayoutName(book, inferred, file.name) : '';
+        // 每次載入只對原始推斷算一次比對指紋；lookup 與稍後 store 共用同一份值。
+        const matchFingerprint = inferred?.ok ? window.__opentixInferInline.savedLayoutFingerprint(inferred) : null;
+        if (inferred?.ok) {
+          const saved = (state.grid?.savedLayouts || []).find(item => window.__opentixInferInline.sameSavedLayoutFingerprint(item.matchFingerprint, matchFingerprint));
+          if (saved) {
+            const config = window.__opentixInferInline.restoreSavedLayoutConfig(saved.config);
+            config.sheet = inferred.config.sheet;
+            const applied = window.__opentixInferInline.rederiveUnknownOpentixConfig(book, config);
+            if (applied.ok) { inferred = applied; remembered = true; layoutName = saved.name; }
+          }
+        }
         if (inferred?.ok) inferred.confirmed = new Set();
-        Object.assign(opentixWizardDraft, { file, bytes, book, family: null, sheetName: null, result: inferred?.result || null, inspection, inferred });
+        Object.assign(opentixWizardDraft, { file, bytes, book, family: null, sheetName: null, result: inferred?.result || null, inspection, inferred, matchFingerprint, remembered, layoutName });
         if (opentixWizardDraft.inspection.status === 'unique') opentixWizardDraft.family = opentixWizardDraft.inspection.families[0].family;
         renderOpentixInspection();
         e.target.value = '';
@@ -19216,7 +19310,7 @@ Theatre OS · 商業計算器 v0.2 demo
     $('opentixWizard').addEventListener('click', e => {
       const family = e.target.closest('[data-opentix-family]');
       const sheet = e.target.closest('[data-opentix-sheet]');
-      const inferEdit = e.target.closest('[data-infer-edit="座位區範圍"], [data-infer-edit="排號位置"]');
+      const inferEdit = e.target.closest('[data-infer-edit="座位區範圍"], [data-infer-edit="排號位置"], [data-infer-edit="版面名稱"]');
       if (family) { opentixWizardDraft.family = family.dataset.opentixFamily; opentixWizardDraft.sheetName = null; parseSelectedOpentix(); }
       else if (sheet) { opentixWizardDraft.sheetName = sheet.dataset.opentixSheet; parseSelectedOpentix(); }
       else if (inferEdit) {
@@ -19225,7 +19319,7 @@ Theatre OS · 商業計算器 v0.2 demo
         const input = document.createElement('input'); input.className = 't8-input'; input.value = value.textContent; input.dataset.inferField = inferEdit.dataset.inferEdit;
         value.replaceChildren(input); input.focus(); input.select();
       }
-      else if (e.target.closest('#opentixInferRetryBtn')) { opentixWizardDraft.inferred = window.__opentixInferInline.inferUnknownOpentixConfig(opentixWizardDraft.book); if (opentixWizardDraft.inferred.ok) opentixWizardDraft.inferred.confirmed = new Set(); opentixWizardDraft.result = opentixWizardDraft.inferred.ok ? opentixWizardDraft.inferred.result : null; renderOpentixInspection(); }
+      else if (e.target.closest('#opentixInferRetryBtn')) { opentixWizardDraft.remembered = false; opentixWizardDraft.inferred = window.__opentixInferInline.inferUnknownOpentixConfig(opentixWizardDraft.book); if (opentixWizardDraft.inferred.ok) opentixWizardDraft.inferred.confirmed = new Set(); opentixWizardDraft.result = opentixWizardDraft.inferred.ok ? opentixWizardDraft.inferred.result : null; opentixWizardDraft.layoutName = opentixWizardDraft.inferred.ok ? window.__opentixInferInline.inferSavedLayoutName(opentixWizardDraft.book, opentixWizardDraft.inferred, opentixWizardDraft.file?.name || '') : ''; renderOpentixInspection(); }
       else if (e.target.closest('#opentixRetryBtn')) { opentixWizardDraft.inspection = window.__opentixParseInline.parseOpentixBook(opentixWizardDraft.book, 'auto', { fillHexOf: window.__xlsxInline.fillHexOf }); parseSelectedOpentix(); }
       else if (e.target.closest('#opentixCancelBtn')) resetOpentixWizard();
       else if (e.target.closest('#opentixBlankBtn')) { resetOpentixWizard(); $('blankGridDrawBtn').focus(); }
@@ -19240,7 +19334,11 @@ Theatre OS · 商業計算器 v0.2 demo
     $('opentixWizard').addEventListener('change', e => {
       const input = e.target.closest('[data-infer-field]'); if (!input || !opentixWizardDraft.inferred?.ok) return;
       const inferred = opentixWizardDraft.inferred, config = { ...inferred.config, floors: inferred.config.floors.map(floor => ({ ...floor })) };
-      if (input.dataset.inferField === '座位區範圍') {
+      if (input.dataset.inferField === '版面名稱') {
+        const name = input.value.trim();
+        if (name) opentixWizardDraft.layoutName = name;
+        renderUnknownInference(); return;
+      } else if (input.dataset.inferField === '座位區範圍') {
         const match = /^\s*([A-Z]+)(\d+)\s*[–-]\s*([A-Z]+)(\d+)\s*$/i.exec(input.value);
         if (!match) { renderUnknownInference(); return; }
         const colNo = letters => [...letters.toUpperCase()].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
